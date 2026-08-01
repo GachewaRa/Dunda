@@ -24,6 +24,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -62,6 +63,16 @@ class MainActivity : ComponentActivity() {
                 val isPlaying by playerViewModel.isPlaying.collectAsState()
                 val position by playerViewModel.currentPosition.collectAsState()
                 val duration by playerViewModel.duration.collectAsState()
+                val isShuffleEnabled by playerViewModel.isShuffleEnabled.collectAsState()
+                val repeatMode by playerViewModel.repeatMode.collectAsState()
+                val isSoloMode by playerViewModel.isSoloMode.collectAsState()
+                val allSongs by musicViewModel.songs.collectAsState()
+
+                // Favourite state of the playing song, live from the library
+                // cache (the Song captured in the queue can be stale).
+                val currentIsFavourite = currentSong?.let { playing ->
+                    allSongs.firstOrNull { it.id == playing.id }?.isFavourite
+                } ?: false
 
                 // Periodically update playback position
                 LaunchedEffect(isPlaying) {
@@ -126,11 +137,26 @@ class MainActivity : ComponentActivity() {
                             isPlaying = isPlaying,
                             currentPosition = position,
                             duration = duration,
+                            isShuffleEnabled = isShuffleEnabled,
+                            repeatMode = repeatMode,
+                            isSoloMode = isSoloMode,
+                            isFavourite = currentIsFavourite,
                             onPlayPause = { playerViewModel.playPause() },
                             onSkipNext = { playerViewModel.skipNext() },
                             onSkipPrevious = { playerViewModel.skipPrevious() },
+                            onToggleShuffle = { playerViewModel.toggleShuffle() },
+                            onCycleRepeat = { playerViewModel.cycleRepeatMode() },
+                            onToggleSolo = { playerViewModel.toggleSoloMode() },
+                            onToggleFavourite = {
+                                currentSong?.let { playing ->
+                                    allSongs.firstOrNull { it.id == playing.id }
+                                        ?.let { musicViewModel.toggleFavourite(it) }
+                                }
+                            },
                             onClick = { /* TODO: expand to full player screen */ },
-                            modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding())
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = innerPadding.calculateBottomPadding())
                         )
                     }
                 }

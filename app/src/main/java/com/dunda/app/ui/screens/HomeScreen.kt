@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -34,26 +35,28 @@ import androidx.compose.ui.unit.dp
 import com.dunda.app.data.model.Playlist
 import com.dunda.app.data.model.Song
 import com.dunda.app.ui.components.SongItem
+import com.dunda.app.data.model.SortMode
 import com.dunda.app.viewmodel.MusicViewModel
 import com.dunda.app.viewmodel.PlayerViewModel
-import com.dunda.app.viewmodel.SortMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     musicViewModel: MusicViewModel,
     playerViewModel: PlayerViewModel,
-    onSettingsClick: () -> Unit = {}
+    onSettingsClick: () -> Unit = {},
+    onStatsClick: () -> Unit = {}
 ) {
     val songs by musicViewModel.songs.collectAsState()
     val sortMode by musicViewModel.sortMode.collectAsState()
     val isLoading by musicViewModel.isLoading.collectAsState()
     val currentSong by playerViewModel.currentSong.collectAsState()
     val playlists by musicViewModel.playlists.collectAsState()
+    val playCounts by musicViewModel.playCounts.collectAsState()
 
     var showSortMenu by remember { mutableStateOf(false) }
 
-    val sortedSongs = musicViewModel.getSortedSongs()
+    val sortedSongs = musicViewModel.sortSongs(songs, sortMode)
 
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
@@ -76,17 +79,12 @@ fun HomeScreen(
                     expanded = showSortMenu,
                     onDismissRequest = { showSortMenu = false }
                 ) {
-                    SortMode.entries.forEach { mode ->
+                    SortMode.entries.filter { it != SortMode.CUSTOM }.forEach { mode ->
                         DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = when (mode) {
-                                            SortMode.TITLE -> "Title"
-                                            SortMode.ARTIST -> "Artist"
-                                            SortMode.DATE_ADDED -> "Recently Added"
-                                            SortMode.BPM -> "BPM"
-                                        },
+                                        text = sortModeLabel(mode),
                                         color = if (mode == sortMode) MaterialTheme.colorScheme.primary
                                                 else MaterialTheme.colorScheme.onSurface
                                     )
@@ -98,6 +96,11 @@ fun HomeScreen(
                             }
                         )
                     }
+                }
+
+                // Statistics
+                IconButton(onClick = onStatsClick) {
+                    Icon(Icons.Default.BarChart, contentDescription = "Statistics")
                 }
 
                 // Refresh
@@ -144,12 +147,14 @@ fun HomeScreen(
                         song = song,
                         isCurrentSong = song.id == currentSong?.id,
                         playlists = playlists,
+                        playCount = playCounts[song.id] ?: 0,
                         onClick = {
                             playerViewModel.playSong(song, sortedSongs)
                         },
                         onAddToPlaylist = { playlistId ->
                             musicViewModel.addSongToPlaylist(playlistId, song.id)
-                        }
+                        },
+                        onToggleFavourite = { musicViewModel.toggleFavourite(song) }
                     )
                 }
             }

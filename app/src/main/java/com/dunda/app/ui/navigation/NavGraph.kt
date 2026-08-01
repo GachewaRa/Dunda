@@ -10,6 +10,7 @@ import com.dunda.app.ui.screens.HomeScreen
 import com.dunda.app.ui.screens.PlaylistDetailScreen
 import com.dunda.app.ui.screens.PlaylistScreen
 import com.dunda.app.ui.screens.SettingsScreen
+import com.dunda.app.ui.screens.StatsScreen
 import com.dunda.app.viewmodel.MusicViewModel
 import com.dunda.app.viewmodel.PlayerViewModel
 
@@ -18,6 +19,7 @@ object Routes {
     const val PLAYLISTS = "playlists"
     const val PLAYLIST_DETAIL = "playlist/{playlistId}"
     const val SETTINGS = "settings"
+    const val STATS = "stats"
 
     fun playlistDetail(playlistId: Long) = "playlist/$playlistId"
 }
@@ -36,7 +38,8 @@ fun DundaNavGraph(
             HomeScreen(
                 musicViewModel = musicViewModel,
                 playerViewModel = playerViewModel,
-                onSettingsClick = { navController.navigate(Routes.SETTINGS) }
+                onSettingsClick = { navController.navigate(Routes.SETTINGS) },
+                onStatsClick = { navController.navigate(Routes.STATS) }
             )
         }
 
@@ -64,6 +67,14 @@ fun DundaNavGraph(
 
         composable(Routes.SETTINGS) {
             SettingsScreen(
+                playerViewModel = playerViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.STATS) {
+            StatsScreen(
+                musicViewModel = musicViewModel,
                 playerViewModel = playerViewModel,
                 onBack = { navController.popBackStack() }
             )

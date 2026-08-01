@@ -13,9 +13,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.RepeatOneOn
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.IconButton
@@ -30,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dunda.app.data.model.Song
+import com.dunda.app.player.RepeatMode
 
 @Composable
 fun MiniPlayer(
@@ -37,9 +45,17 @@ fun MiniPlayer(
     isPlaying: Boolean,
     currentPosition: Long,
     duration: Long,
+    isShuffleEnabled: Boolean,
+    repeatMode: RepeatMode,
+    isSoloMode: Boolean,
+    isFavourite: Boolean,
     onPlayPause: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
+    onToggleShuffle: () -> Unit,
+    onCycleRepeat: () -> Unit,
+    onToggleSolo: () -> Unit,
+    onToggleFavourite: () -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -124,6 +140,81 @@ fun MiniPlayer(
                             Icon(
                                 imageVector = Icons.Default.SkipNext,
                                 contentDescription = "Next"
+                            )
+                        }
+                    }
+
+                    // Mode controls: shuffle · repeat · solo · favourite
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val activeColor = MaterialTheme.colorScheme.primary
+                        val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+
+                        IconButton(onClick = onToggleShuffle) {
+                            Icon(
+                                imageVector = Icons.Default.Shuffle,
+                                contentDescription = "Shuffle",
+                                tint = if (isShuffleEnabled) activeColor else inactiveColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        IconButton(onClick = onCycleRepeat) {
+                            Icon(
+                                imageVector = when (repeatMode) {
+                                    RepeatMode.OFF, RepeatMode.ALL -> Icons.Default.Repeat
+                                    RepeatMode.ONE -> Icons.Default.RepeatOne
+                                    RepeatMode.ONCE -> Icons.Default.RepeatOneOn
+                                },
+                                contentDescription = when (repeatMode) {
+                                    RepeatMode.OFF -> "Repeat off"
+                                    RepeatMode.ALL -> "Repeat all"
+                                    RepeatMode.ONE -> "Repeat one"
+                                    RepeatMode.ONCE -> "Repeat once, then continue"
+                                },
+                                tint = if (repeatMode == RepeatMode.OFF) inactiveColor else activeColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        if (repeatMode == RepeatMode.ONCE) {
+                            Text(
+                                "1×",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = activeColor
+                            )
+                        }
+
+                        IconButton(onClick = onToggleSolo) {
+                            Icon(
+                                imageVector = Icons.Default.PanTool,
+                                contentDescription = if (isSoloMode) "Solo mode on (no auto-advance)"
+                                                     else "Solo mode off",
+                                tint = if (isSoloMode) activeColor else inactiveColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        if (isSoloMode) {
+                            Text(
+                                "solo",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = activeColor
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        IconButton(onClick = onToggleFavourite) {
+                            Icon(
+                                imageVector = if (isFavourite) Icons.Default.Favorite
+                                              else Icons.Default.FavoriteBorder,
+                                contentDescription = if (isFavourite) "Remove from favourites"
+                                                     else "Add to favourites",
+                                tint = if (isFavourite) activeColor else inactiveColor,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }

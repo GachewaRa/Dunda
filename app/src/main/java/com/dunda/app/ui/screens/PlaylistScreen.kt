@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -70,26 +71,31 @@ fun PlaylistScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .padding(padding)
             ) {
-                Spacer(modifier = Modifier.height(120.dp))
-                Icon(
-                    Icons.Default.QueueMusic,
-                    contentDescription = null,
-                    modifier = Modifier.padding(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                )
-                Text(
-                    "No playlists yet",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-                Text(
-                    "Tap + to create one",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                )
+                FavouritesItem(onClick = { onPlaylistClick(FAVOURITES_PLAYLIST_ID) })
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Spacer(modifier = Modifier.height(120.dp))
+                    Icon(
+                        Icons.Default.QueueMusic,
+                        contentDescription = null,
+                        modifier = Modifier.padding(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                    )
+                    Text(
+                        "No playlists yet",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                    Text(
+                        "Tap + to create one",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    )
+                }
             }
         } else {
             LazyColumn(
@@ -97,6 +103,9 @@ fun PlaylistScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
+                item(key = FAVOURITES_PLAYLIST_ID) {
+                    FavouritesItem(onClick = { onPlaylistClick(FAVOURITES_PLAYLIST_ID) })
+                }
                 items(playlists, key = { it.id }) { playlist ->
                     PlaylistItem(
                         playlist = playlist,
@@ -116,6 +125,32 @@ fun PlaylistScreen(
                 showCreateDialog = false
             }
         )
+    }
+}
+
+@Composable
+private fun FavouritesItem(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Default.Favorite,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Favourites", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Songs you've hearted",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        }
     }
 }
 

@@ -37,6 +37,9 @@ interface PlaylistDao {
     @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_songs WHERE playlistId = :playlistId")
     suspend fun getNextPosition(playlistId: Long): Int
 
+    @Query("UPDATE playlists SET sortMode = :mode WHERE id = :playlistId")
+    suspend fun setSortMode(playlistId: Long, mode: String)
+
     @Transaction
     suspend fun addSongToPlaylist(playlistId: Long, songId: Long) {
         val position = getNextPosition(playlistId)

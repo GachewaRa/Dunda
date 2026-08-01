@@ -7,10 +7,14 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.dunda.app.data.local.SettingsStore
 import com.dunda.app.data.model.Song
 import com.dunda.app.player.MusicService
+import com.dunda.app.player.RepeatMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -28,6 +32,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _isShuffleEnabled = MutableStateFlow(false)
     val isShuffleEnabled: StateFlow<Boolean> = _isShuffleEnabled
+
+    private val _repeatMode = MutableStateFlow(RepeatMode.OFF)
+    val repeatMode: StateFlow<RepeatMode> = _repeatMode
+
+    private val _isSoloMode = MutableStateFlow(false)
+    val isSoloMode: StateFlow<Boolean> = _isSoloMode
 
     private val _crossfadeDuration = MutableStateFlow(10_000L)
     val crossfadeDuration: StateFlow<Long> = _crossfadeDuration
@@ -56,6 +66,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         bindService()
+        viewModelScope.launch {
+            SettingsStore(application).crossfadeMs.collect { _crossfadeDuration.value = it }
+        }
     }
 
     private fun bindService() {
@@ -68,6 +81,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun playSong(song: Song, queue: List<Song> = listOf(song)) {
         musicService?.playSong(song, queue)
+        updateState()
+    }
+
+    fun playShuffled(queue: List<Song>) {
+        musicService?.playShuffled(queue)
         updateState()
     }
 
@@ -95,6 +113,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         updateState()
     }
 
+    fun cycleRepeatMode() {
+        musicService?.cycleRepeatMode()
+        updateState()
+    }
+
+    fun toggleSoloMode() {
+        musicService?.toggleSoloMode()
+        updateState()
+    }
+
     fun setCrossfadeDuration(durationMs: Long) {
         _crossfadeDuration.value = durationMs
         musicService?.setCrossfadeDuration(durationMs)
@@ -107,6 +135,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             _currentPosition.value = service.currentPosition()
             _duration.value = service.duration()
             _isShuffleEnabled.value = service.isShuffleEnabled()
+            _repeatMode.value = service.getRepeatMode()
+            _isSoloMode.value = service.isSoloMode()
         }
     }
 

@@ -55,6 +55,21 @@ class CrossfadePlayer(private val context: Context) {
         startMonitoring()
     }
 
+    /**
+     * Load a song paused at a given position without starting playback.
+     * Used to restore the persisted queue state on service start.
+     */
+    fun prepareAt(mediaItem: MediaItem, positionMs: Long) {
+        stopCrossfade()
+        activePlayer?.apply {
+            setMediaItem(mediaItem)
+            prepare()
+            seekTo(positionMs)
+            volume = 1f
+            playWhenReady = false
+        }
+    }
+
     fun pause() {
         activePlayer?.playWhenReady = false
         if (isCrossfading) {
@@ -90,6 +105,20 @@ class CrossfadePlayer(private val context: Context) {
             prepare()
             volume = 0f
             playWhenReady = false
+        }
+    }
+
+    /**
+     * Drop whatever was queued for crossfade. Used when the advance policy says
+     * nothing should follow the current song (solo mode, end of queue), so the
+     * song ends cleanly instead of fading into a stale preload.
+     */
+    fun clearNext() {
+        if (isCrossfading) return
+        inactivePlayer?.apply {
+            stop()
+            clearMediaItems()
+            volume = 0f
         }
     }
 

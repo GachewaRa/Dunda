@@ -1,23 +1,40 @@
 package com.dunda.app.player
 
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.dunda.app.data.local.AppDatabase
+import com.dunda.app.data.local.SettingsStore
+import com.dunda.app.data.model.PlayEvent
+import com.dunda.app.data.model.QueueState
 import com.dunda.app.data.model.Song
+import com.dunda.app.data.model.toSong
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class MusicService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
     private lateinit var crossfadePlayer: CrossfadePlayer
 
-    // Current queue state
-    private val queue = mutableListOf<Song>()
-    private var currentIndex = -1
-    private var shuffleEnabled = false
-    private var shuffledIndices = mutableListOf<Int>()
+    private val queueManager = QueueManager<Song>()
+    private lateinit var playTracker: PlayTracker
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    // Independent of serviceScope so the final persistState in onDestroy is not
+    // cancelled with the service.
+    private val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private lateinit var database: AppDatabase
+    private lateinit var settings: SettingsStore
 
     companion object {
         var instance: MusicService? = null
@@ -28,79 +45,119 @@ class MusicService : MediaSessionService() {
         super.onCreate()
         instance = this
 
+        database = AppDatabase.getInstance(this)
+        settings = SettingsStore(this)
+
+        playTracker = PlayTracker(onQualified = { songId, at ->
+            serviceScope.launch(Dispatchers.IO) {
+                database.playEventDao().insert(PlayEvent(songId = songId, playedAt = at))
+            }
+        })
+
         crossfadePlayer = CrossfadePlayer(this)
         crossfadePlayer.initialize()
 
+        // Crossfade completed: the preloaded item is now audible. Commit the
+        // same transition QueueManager promised via peekNext.
         crossfadePlayer.setOnSongTransition {
-            currentIndex = getNextIndex()
-            queueNextForCrossfade()
-            notifyStateChanged()
+            queueManager.advanceOnCompletion()
+            onCurrentSongStarted()
         }
 
+        // Song ended with nothing preloaded (no crossfade happened).
         crossfadePlayer.setOnPlaybackComplete {
-            val nextIdx = getNextIndex()
-            if (nextIdx >= 0) {
-                currentIndex = nextIdx
-                playCurrentSong()
-            } else {
-                notifyStateChanged()
+            when (queueManager.advanceOnCompletion()) {
+                is QueueManager.NextAction.Play,
+                QueueManager.NextAction.RepeatCurrent -> playCurrentSong()
+                QueueManager.NextAction.Stop -> {
+                    persistState()
+                    notifyStateChanged()
+                }
             }
         }
 
-        // Create a MediaSession using the active ExoPlayer
         val player = crossfadePlayer.getActivePlayer() ?: ExoPlayer.Builder(this).build()
         mediaSession = MediaSession.Builder(this, player).build()
-    }
 
-    fun getCrossfadePlayer(): CrossfadePlayer = crossfadePlayer
-
-    fun getCurrentSong(): Song? {
-        if (currentIndex < 0 || currentIndex >= queue.size) return null
-        return queue[currentIndex]
-    }
-
-    fun getQueue(): List<Song> = queue.toList()
-    fun getCurrentIndex(): Int = currentIndex
-    fun isShuffleEnabled(): Boolean = shuffleEnabled
-
-    fun playSong(song: Song, songList: List<Song> = listOf(song)) {
-        queue.clear()
-        queue.addAll(songList)
-        currentIndex = queue.indexOfFirst { it.id == song.id }.takeIf { it >= 0 } ?: 0
-
-        if (shuffleEnabled) {
-            generateShuffledIndices()
+        serviceScope.launch {
+            settings.crossfadeMs.collect { crossfadePlayer.crossfadeDurationMs = it }
         }
 
+        restorePersistedState()
+        trackerHandler.post(trackerRunnable)
+    }
+
+    // ---- play tracking (docs/FEATURES.md §5) ----
+
+    private val trackerHandler = Handler(Looper.getMainLooper())
+    private val trackerRunnable = object : Runnable {
+        override fun run() {
+            if (crossfadePlayer.isPlaying()) playTracker.onProgress(1000)
+            trackerHandler.postDelayed(this, 1000)
+        }
+    }
+
+    /** Common path for every audible song start: new instance + preload + persist. */
+    private fun onCurrentSongStarted() {
+        getCurrentSong()?.let { playTracker.startInstance(it.id, it.duration) }
+        queueNextForCrossfade()
+        persistState()
+        notifyStateChanged()
+    }
+
+    // ---- queue / playback API ----
+
+    fun getCurrentSong(): Song? = queueManager.current
+    fun getQueue(): List<Song> = queueManager.queue
+    fun getCurrentIndex(): Int = queueManager.currentIndex
+    fun isShuffleEnabled(): Boolean = queueManager.shuffleEnabled
+    fun getRepeatMode(): RepeatMode = queueManager.repeatMode
+    fun isSoloMode(): Boolean = queueManager.soloMode
+
+    fun playSong(song: Song, songList: List<Song> = listOf(song)) {
+        val start = songList.indexOfFirst { it.id == song.id }.takeIf { it >= 0 } ?: 0
+        queueManager.setQueue(songList, start)
         playCurrentSong()
     }
 
     fun playAtIndex(index: Int) {
-        if (index in queue.indices) {
-            currentIndex = index
-            playCurrentSong()
-        }
+        if (queueManager.jumpTo(index)) playCurrentSong()
+    }
+
+    /** Start playing [songList] shuffled: random first song, true-shuffle cycle. */
+    fun playShuffled(songList: List<Song>) {
+        if (songList.isEmpty()) return
+        queueManager.setShuffle(true)
+        queueManager.setQueue(songList, songList.indices.random())
+        playCurrentSong()
     }
 
     private fun playCurrentSong() {
         val song = getCurrentSong() ?: return
-        val mediaItem = buildMediaItem(song)
-        crossfadePlayer.play(mediaItem)
-        queueNextForCrossfade()
-        notifyStateChanged()
+        crossfadePlayer.play(buildMediaItem(song))
+        onCurrentSongStarted()
     }
 
+    /**
+     * Preload (or clear) the crossfade slot according to the advance policy.
+     * RepeatCurrent preloads the same song from its start; Stop (solo mode,
+     * end of queue) clears the slot so the song ends cleanly.
+     */
     private fun queueNextForCrossfade() {
-        val nextIdx = getNextIndex()
-        if (nextIdx >= 0 && nextIdx < queue.size) {
-            val nextSong = queue[nextIdx]
-            crossfadePlayer.queueNext(buildMediaItem(nextSong))
+        when (val next = queueManager.peekNext()) {
+            is QueueManager.NextAction.Play ->
+                crossfadePlayer.queueNext(buildMediaItem(next.item))
+            QueueManager.NextAction.RepeatCurrent ->
+                getCurrentSong()?.let { crossfadePlayer.queueNext(buildMediaItem(it)) }
+            QueueManager.NextAction.Stop ->
+                crossfadePlayer.clearNext()
         }
     }
 
     fun playPause() {
         if (crossfadePlayer.isPlaying()) {
             crossfadePlayer.pause()
+            persistState()
         } else {
             crossfadePlayer.resume()
         }
@@ -108,10 +165,10 @@ class MusicService : MediaSessionService() {
     }
 
     fun skipNext() {
-        val nextIdx = getNextIndex()
-        if (nextIdx >= 0) {
-            currentIndex = nextIdx
-            playCurrentSong()
+        when (queueManager.manualNext()) {
+            is QueueManager.NextAction.Play,
+            QueueManager.NextAction.RepeatCurrent -> playCurrentSong()
+            QueueManager.NextAction.Stop -> notifyStateChanged()
         }
     }
 
@@ -121,10 +178,10 @@ class MusicService : MediaSessionService() {
             crossfadePlayer.seekTo(0)
             return
         }
-        val prevIdx = getPreviousIndex()
-        if (prevIdx >= 0) {
-            currentIndex = prevIdx
-            playCurrentSong()
+        when (queueManager.manualPrevious()) {
+            is QueueManager.NextAction.Play,
+            QueueManager.NextAction.RepeatCurrent -> playCurrentSong()
+            QueueManager.NextAction.Stop -> crossfadePlayer.seekTo(0)
         }
     }
 
@@ -132,55 +189,112 @@ class MusicService : MediaSessionService() {
         crossfadePlayer.seekTo(positionMs)
     }
 
+    fun addToQueue(song: Song) {
+        queueManager.addToQueue(song)
+        queueNextForCrossfade()
+        persistState()
+        notifyStateChanged()
+    }
+
+    // ---- modes ----
+
     fun toggleShuffle() {
-        shuffleEnabled = !shuffleEnabled
-        if (shuffleEnabled) {
-            generateShuffledIndices()
+        queueManager.toggleShuffle()
+        onModeChanged()
+    }
+
+    fun setRepeatMode(mode: RepeatMode) {
+        queueManager.repeatMode = mode
+        onModeChanged()
+    }
+
+    fun cycleRepeatMode() {
+        val next = when (queueManager.repeatMode) {
+            RepeatMode.OFF -> RepeatMode.ALL
+            RepeatMode.ALL -> RepeatMode.ONE
+            RepeatMode.ONE -> RepeatMode.ONCE
+            RepeatMode.ONCE -> RepeatMode.OFF
         }
+        setRepeatMode(next)
+    }
+
+    fun toggleSoloMode() {
+        queueManager.soloMode = !queueManager.soloMode
+        onModeChanged()
+    }
+
+    /** A mode change can invalidate what's preloaded for crossfade. */
+    private fun onModeChanged() {
+        queueNextForCrossfade()
+        persistState()
         notifyStateChanged()
     }
 
     fun setCrossfadeDuration(durationMs: Long) {
         crossfadePlayer.crossfadeDurationMs = durationMs
+        serviceScope.launch { settings.setCrossfadeMs(durationMs) }
     }
 
     fun isPlaying(): Boolean = crossfadePlayer.isPlaying()
     fun currentPosition(): Long = crossfadePlayer.currentPosition()
     fun duration(): Long = crossfadePlayer.duration()
 
-    private fun getNextIndex(): Int {
-        if (queue.isEmpty()) return -1
-        return if (shuffleEnabled && shuffledIndices.isNotEmpty()) {
-            val currentShufflePos = shuffledIndices.indexOf(currentIndex)
-            if (currentShufflePos < shuffledIndices.size - 1) {
-                shuffledIndices[currentShufflePos + 1]
-            } else {
-                -1 // end of shuffled queue
-            }
-        } else {
-            if (currentIndex < queue.size - 1) currentIndex + 1 else -1
-        }
+    // ---- persistence (docs/FEATURES.md §8) ----
+
+    private fun persistState() {
+        val snap = queueManager.snapshot()
+        val queueIds = queueManager.queue.joinToString(",") { it.id.toString() }
+        val state = QueueState(
+            queueIds = queueIds,
+            shuffleOrder = snap.order.joinToString(","),
+            shuffleCursor = snap.cursor,
+            currentIndex = snap.currentIndex,
+            positionMs = crossfadePlayer.currentPosition(),
+            shuffleEnabled = snap.shuffleEnabled,
+            repeatMode = snap.repeatMode.name,
+            soloMode = snap.soloMode,
+        )
+        persistScope.launch { database.queueStateDao().save(state) }
     }
 
-    private fun getPreviousIndex(): Int {
-        if (queue.isEmpty()) return -1
-        return if (shuffleEnabled && shuffledIndices.isNotEmpty()) {
-            val currentShufflePos = shuffledIndices.indexOf(currentIndex)
-            if (currentShufflePos > 0) {
-                shuffledIndices[currentShufflePos - 1]
-            } else {
-                -1
+    private fun restorePersistedState() {
+        serviceScope.launch {
+            val restored = kotlin.runCatching {
+                val state = database.queueStateDao().get() ?: return@launch
+                val songsById = database.songDao().getAllPresentOnce().associateBy { it.id }
+                val ids = state.queueIds.split(",").mapNotNull { it.toLongOrNull() }
+                val songs = ids.mapNotNull { songsById[it]?.toSong() }
+                if (songs.isEmpty()) return@launch
+                // Index-based fields survive only if no song vanished; otherwise
+                // fall back to a fresh queue at the same current song.
+                if (songs.size == ids.size) {
+                    queueManager.restore(
+                        songs,
+                        QueueManager.Snapshot(
+                            order = state.shuffleOrder.split(",").mapNotNull { it.toIntOrNull() },
+                            cursor = state.shuffleCursor,
+                            currentIndex = state.currentIndex,
+                            shuffleEnabled = state.shuffleEnabled,
+                            repeatMode = RepeatMode.entries.firstOrNull { it.name == state.repeatMode }
+                                ?: RepeatMode.OFF,
+                            soloMode = state.soloMode,
+                        )
+                    )
+                } else {
+                    queueManager.setQueue(songs, 0)
+                }
+                // Restore paused at the saved song/position; user resumes explicitly.
+                getCurrentSong()?.let { song ->
+                    crossfadePlayer.prepareAt(buildMediaItem(song), state.positionMs)
+                    playTracker.startInstance(song.id, song.duration)
+                    queueNextForCrossfade()
+                }
+                notifyStateChanged()
             }
-        } else {
-            if (currentIndex > 0) currentIndex - 1 else -1
-        }
-    }
-
-    private fun generateShuffledIndices() {
-        shuffledIndices = queue.indices.toMutableList().apply {
-            remove(currentIndex)
-            shuffle()
-            add(0, currentIndex) // current song stays first
+            restored.exceptionOrNull()?.let {
+                // Corrupt state must never block startup; start clean instead.
+                kotlin.runCatching { database.queueStateDao().clear() }
+            }
         }
     }
 
@@ -225,6 +339,9 @@ class MusicService : MediaSessionService() {
 
     override fun onDestroy() {
         instance = null
+        persistState()
+        trackerHandler.removeCallbacks(trackerRunnable)
+        serviceScope.cancel()
         crossfadePlayer.release()
         mediaSession?.run {
             player.release()

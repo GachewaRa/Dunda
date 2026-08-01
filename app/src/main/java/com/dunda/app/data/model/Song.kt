@@ -11,7 +11,8 @@ data class Song(
     val uri: Uri,
     val albumArtUri: Uri?,
     val bpm: Int? = null,     // beats per minute (null = not yet analyzed)
-    val dateAdded: Long = 0
+    val dateAdded: Long = 0,
+    val isFavourite: Boolean = false
 ) {
     val durationFormatted: String
         get() {

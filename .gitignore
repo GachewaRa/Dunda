@@ -1,0 +1,15 @@
+# Gradle
+.gradle/
+build/
+app/build/
+
+# Local config (SDK path is machine-specific)
+local.properties
+
+# IDE
+.idea/
+*.iml
+
+# Logs
+*.log
+.kotlin/

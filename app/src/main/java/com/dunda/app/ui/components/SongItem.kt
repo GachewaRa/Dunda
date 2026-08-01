@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
@@ -36,8 +38,10 @@ fun SongItem(
     song: Song,
     isCurrentSong: Boolean = false,
     playlists: List<Playlist> = emptyList(),
+    playCount: Int? = null,
     onClick: () -> Unit,
-    onAddToPlaylist: ((Long) -> Unit)? = null
+    onAddToPlaylist: ((Long) -> Unit)? = null,
+    onToggleFavourite: (() -> Unit)? = null
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -72,8 +76,17 @@ fun SongItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            val subtitle = buildString {
+                append(song.artist)
+                append(" • ")
+                append(song.durationFormatted)
+                if (playCount != null) {
+                    append(" • ")
+                    append(if (playCount == 1) "1 play" else "$playCount plays")
+                }
+            }
             Text(
-                text = "${song.artist} • ${song.durationFormatted}",
+                text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 maxLines = 1,
@@ -84,6 +97,19 @@ fun SongItem(
                     text = "${song.bpm} BPM",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary
+                )
+            }
+        }
+
+        if (onToggleFavourite != null) {
+            IconButton(onClick = onToggleFavourite) {
+                Icon(
+                    imageVector = if (song.isFavourite) Icons.Default.Favorite
+                                  else Icons.Default.FavoriteBorder,
+                    contentDescription = if (song.isFavourite) "Remove from favourites"
+                                         else "Add to favourites",
+                    tint = if (song.isFavourite) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                 )
             }
         }
