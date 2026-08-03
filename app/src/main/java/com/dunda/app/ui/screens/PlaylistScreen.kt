@@ -12,9 +12,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -73,7 +75,7 @@ fun PlaylistScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                FavouritesItem(onClick = { onPlaylistClick(FAVOURITES_PLAYLIST_ID) })
+                VirtualPlaylists(onPlaylistClick)
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -103,8 +105,8 @@ fun PlaylistScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                item(key = FAVOURITES_PLAYLIST_ID) {
-                    FavouritesItem(onClick = { onPlaylistClick(FAVOURITES_PLAYLIST_ID) })
+                item(key = "virtual") {
+                    Column { VirtualPlaylists(onPlaylistClick) }
                 }
                 items(playlists, key = { it.id }) { playlist ->
                     PlaylistItem(
@@ -129,7 +131,12 @@ fun PlaylistScreen(
 }
 
 @Composable
-private fun FavouritesItem(onClick: () -> Unit) {
+private fun VirtualPlaylistItem(
+    name: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -137,21 +144,39 @@ private fun FavouritesItem(onClick: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            Icons.Default.Favorite,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary
-        )
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text("Favourites", style = MaterialTheme.typography.titleMedium)
+            Text(name, style = MaterialTheme.typography.titleMedium)
             Text(
-                "Songs you've hearted",
+                subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
         }
     }
+}
+
+@Composable
+private fun VirtualPlaylists(onPlaylistClick: (Long) -> Unit) {
+    VirtualPlaylistItem(
+        name = "Favourites",
+        subtitle = "Songs you've hearted",
+        icon = Icons.Default.Favorite,
+        onClick = { onPlaylistClick(FAVOURITES_PLAYLIST_ID) }
+    )
+    VirtualPlaylistItem(
+        name = "Recently Added",
+        subtitle = "Newest songs first",
+        icon = Icons.Default.NewReleases,
+        onClick = { onPlaylistClick(RECENTLY_ADDED_PLAYLIST_ID) }
+    )
+    VirtualPlaylistItem(
+        name = "Most Played",
+        subtitle = "Your all-time top songs",
+        icon = Icons.AutoMirrored.Filled.TrendingUp,
+        onClick = { onPlaylistClick(MOST_PLAYED_PLAYLIST_ID) }
+    )
 }
 
 @Composable

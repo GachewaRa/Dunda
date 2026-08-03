@@ -51,10 +51,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            // We use the singleton pattern since MediaSessionService doesn't give us a binder easily
-            musicService = MusicService.instance
-            musicService?.addStateListener(stateListener)
-            updateState()
+            attachService()
+        }
+
+        // MediaSessionService returns a null binder for plain bindings, so this
+        // (not onServiceConnected) is the callback that actually fires (API 28+).
+        // The service is still created by BIND_AUTO_CREATE; reach it via the
+        // singleton.
+        override fun onNullBinding(name: ComponentName?) {
+            attachService()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -62,6 +67,27 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             musicService = null
             bound = false
         }
+    }
+
+    private fun attachService() {
+        MusicService.instance?.let {
+            if (musicService !== it) {
+                musicService?.removeStateListener(stateListener)
+                musicService = it
+                it.addStateListener(stateListener)
+            }
+        }
+        updateState()
+    }
+
+    /**
+     * The service reference, attaching lazily if the binding callbacks haven't
+     * delivered it yet (e.g. API 26/27 where onNullBinding doesn't exist, or a
+     * tap that races service creation).
+     */
+    private fun service(): MusicService? {
+        if (musicService == null) attachService()
+        return musicService
     }
 
     init {
@@ -74,61 +100,67 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun bindService() {
         val context = getApplication<Application>()
         val intent = Intent(context, MusicService::class.java)
-        context.startForegroundService(intent)
+        // Plain startService, NOT startForegroundService: the latter demands a
+        // foreground notification within seconds, but Media3 only posts one
+        // once playback starts — the unfulfilled promise surfaces as an ANR.
+        // MediaSessionService promotes itself to foreground when playback begins.
+        context.startService(intent)
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         bound = true
     }
 
     fun playSong(song: Song, queue: List<Song> = listOf(song)) {
-        musicService?.playSong(song, queue)
+        service()?.playSong(song, queue)
         updateState()
     }
 
     fun playShuffled(queue: List<Song>) {
-        musicService?.playShuffled(queue)
+        service()?.playShuffled(queue)
         updateState()
     }
 
     fun playPause() {
-        musicService?.playPause()
+        service()?.playPause()
         updateState()
     }
 
     fun skipNext() {
-        musicService?.skipNext()
+        service()?.skipNext()
         updateState()
     }
 
     fun skipPrevious() {
-        musicService?.skipPrevious()
+        service()?.skipPrevious()
         updateState()
     }
 
     fun seekTo(positionMs: Long) {
-        musicService?.seekTo(positionMs)
+        service()?.seekTo(positionMs)
     }
 
     fun toggleShuffle() {
-        musicService?.toggleShuffle()
+        service()?.toggleShuffle()
         updateState()
     }
 
     fun cycleRepeatMode() {
-        musicService?.cycleRepeatMode()
+        service()?.cycleRepeatMode()
         updateState()
     }
 
     fun toggleSoloMode() {
-        musicService?.toggleSoloMode()
+        service()?.toggleSoloMode()
         updateState()
     }
 
     fun setCrossfadeDuration(durationMs: Long) {
         _crossfadeDuration.value = durationMs
-        musicService?.setCrossfadeDuration(durationMs)
+        service()?.setCrossfadeDuration(durationMs)
     }
 
     fun updateState() {
+        // Uses the field, not service(): attachService() calls this, so going
+        // through service() here would recurse while the service is still null.
         musicService?.let { service ->
             _currentSong.value = service.getCurrentSong()
             _isPlaying.value = service.isPlaying()
@@ -142,11 +174,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     /**
      * Call this periodically from the UI to update the position slider.
+     * Also refreshes isPlaying so the play/pause icon can never wedge on a
+     * stale value (the service pushes changes too, but this is the backstop).
      */
     fun tickPosition() {
-        musicService?.let {
+        service()?.let {
             _currentPosition.value = it.currentPosition()
             _duration.value = it.duration()
+            _isPlaying.value = it.isPlaying()
         }
     }
 

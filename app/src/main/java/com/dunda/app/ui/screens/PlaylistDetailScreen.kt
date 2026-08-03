@@ -36,8 +36,10 @@ import com.dunda.app.ui.components.SongItem
 import com.dunda.app.viewmodel.MusicViewModel
 import com.dunda.app.viewmodel.PlayerViewModel
 
-/** Playlist id for the built-in Favourites virtual playlist. */
+/** IDs for the built-in virtual playlists (never collide with Room's ids > 0). */
 const val FAVOURITES_PLAYLIST_ID = -1L
+const val RECENTLY_ADDED_PLAYLIST_ID = -2L
+const val MOST_PLAYED_PLAYLIST_ID = -3L
 
 fun sortModeLabel(mode: SortMode): String = when (mode) {
     SortMode.CUSTOM -> "Manual order"
@@ -61,7 +63,7 @@ fun PlaylistDetailScreen(
     playerViewModel: PlayerViewModel,
     onBack: () -> Unit
 ) {
-    val isFavourites = playlistId == FAVOURITES_PLAYLIST_ID
+    val isVirtual = playlistId < 0
 
     val playlists by musicViewModel.playlists.collectAsState()
     val playlist = playlists.find { it.id == playlistId }
@@ -72,13 +74,32 @@ fun PlaylistDetailScreen(
     val playCounts by musicViewModel.playCounts.collectAsState()
     val currentSong by playerViewModel.currentSong.collectAsState()
 
-    // Favourites has no manual positions, so it defaults to title order.
-    var favouritesSort by rememberSaveable { mutableStateOf(SortMode.TITLE_ASC) }
-    val sortMode = if (isFavourites) favouritesSort
+    val title = when (playlistId) {
+        FAVOURITES_PLAYLIST_ID -> "Favourites"
+        RECENTLY_ADDED_PLAYLIST_ID -> "Recently Added"
+        MOST_PLAYED_PLAYLIST_ID -> "Most Played"
+        else -> playlist?.name ?: "Playlist"
+    }
+
+    // Virtual playlists have no manual positions; each gets a natural default
+    // order, overridable per visit (not persisted).
+    val defaultVirtualSort = when (playlistId) {
+        RECENTLY_ADDED_PLAYLIST_ID -> SortMode.DATE_ADDED_DESC
+        MOST_PLAYED_PLAYLIST_ID -> SortMode.PLAY_COUNT_DESC
+        else -> SortMode.TITLE_ASC
+    }
+    var virtualSort by rememberSaveable { mutableStateOf<SortMode?>(null) }
+    val sortMode = if (isVirtual) virtualSort ?: defaultVirtualSort
                    else SortMode.fromName(playlist?.sortMode)
 
-    val baseSongs = if (isFavourites) favourites
-                    else remember(songIds, allSongs) { musicViewModel.getSongsByIds(songIds) }
+    val baseSongs = when (playlistId) {
+        FAVOURITES_PLAYLIST_ID -> favourites
+        RECENTLY_ADDED_PLAYLIST_ID -> allSongs
+        MOST_PLAYED_PLAYLIST_ID -> remember(allSongs, playCounts) {
+            allSongs.filter { (playCounts[it.id] ?: 0) > 0 }
+        }
+        else -> remember(songIds, allSongs) { musicViewModel.getSongsByIds(songIds) }
+    }
 
     // Playback follows the displayed order (docs/FEATURES.md §7).
     val displayedSongs = remember(baseSongs, sortMode, playCounts) {
@@ -91,10 +112,7 @@ fun PlaylistDetailScreen(
         TopAppBar(
             title = {
                 Column {
-                    Text(
-                        if (isFavourites) "Favourites" else playlist?.name ?: "Playlist",
-                        style = MaterialTheme.typography.titleLarge
-                    )
+                    Text(title, style = MaterialTheme.typography.titleLarge)
                     Text(
                         "${displayedSongs.size} songs • ${sortModeLabel(sortMode)}",
                         style = MaterialTheme.typography.bodySmall,
@@ -116,7 +134,7 @@ fun PlaylistDetailScreen(
                     onDismissRequest = { showSortMenu = false }
                 ) {
                     SortMode.entries
-                        .filter { it != SortMode.BPM && (!isFavourites || it != SortMode.CUSTOM) }
+                        .filter { it != SortMode.BPM && (!isVirtual || it != SortMode.CUSTOM) }
                         .forEach { mode ->
                             DropdownMenuItem(
                                 text = {
@@ -127,7 +145,7 @@ fun PlaylistDetailScreen(
                                     )
                                 },
                                 onClick = {
-                                    if (isFavourites) favouritesSort = mode
+                                    if (isVirtual) virtualSort = mode
                                     else musicViewModel.setPlaylistSortMode(playlistId, mode)
                                     showSortMenu = false
                                 }
@@ -160,10 +178,12 @@ fun PlaylistDetailScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    if (isFavourites) {
-                        "No favourites yet.\nTap the heart on any song to add it."
-                    } else {
-                        "No songs in this playlist.\nAdd songs from the home screen."
+                    when (playlistId) {
+                        FAVOURITES_PLAYLIST_ID ->
+                            "No favourites yet.\nTap the heart on any song to add it."
+                        MOST_PLAYED_PLAYLIST_ID ->
+                            "No plays logged yet.\nThis playlist fills up as you listen."
+                        else -> "No songs in this playlist.\nAdd songs from the home screen."
                     },
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)

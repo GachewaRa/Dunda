@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOn
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.RepeatOneOn
 import androidx.compose.material.icons.filled.Shuffle
@@ -27,17 +28,29 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dunda.app.data.model.Song
 import com.dunda.app.player.RepeatMode
+
+private fun formatTime(ms: Long): String {
+    val totalSeconds = (ms.coerceAtLeast(0)) / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%d:%02d".format(minutes, seconds)
+}
 
 @Composable
 fun MiniPlayer(
@@ -52,6 +65,7 @@ fun MiniPlayer(
     onPlayPause: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
+    onSeekTo: (Long) -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeat: () -> Unit,
     onToggleSolo: () -> Unit,
@@ -72,19 +86,51 @@ fun MiniPlayer(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column {
-                    // Progress bar at top
+                    // Draggable playhead. While dragging, show the drag target
+                    // instead of live progress so the thumb doesn't fight the
+                    // 250ms position ticker; seek is issued on release.
+                    var dragFraction by remember { mutableStateOf<Float?>(null) }
                     val progress = if (duration > 0) {
                         (currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
                     } else 0f
 
-                    LinearProgressIndicator(
-                        progress = { progress },
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(2.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
-                    )
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = formatTime(
+                                dragFraction?.let { (it * duration).toLong() } ?: currentPosition
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Slider(
+                            value = dragFraction ?: progress,
+                            onValueChange = { dragFraction = it },
+                            onValueChangeFinished = {
+                                dragFraction?.let { onSeekTo((it * duration).toLong()) }
+                                dragFraction = null
+                            },
+                            enabled = duration > 0,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(24.dp)
+                                .padding(horizontal = 8.dp),
+                            colors = SliderDefaults.colors(
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary,
+                                inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f),
+                            )
+                        )
+                        Text(
+                            text = formatTime(duration),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
 
                     Row(
                         modifier = Modifier
@@ -165,10 +211,12 @@ fun MiniPlayer(
 
                         IconButton(onClick = onCycleRepeat) {
                             Icon(
+                                // Same icon language as the media notification
                                 imageVector = when (repeatMode) {
-                                    RepeatMode.OFF, RepeatMode.ALL -> Icons.Default.Repeat
-                                    RepeatMode.ONE -> Icons.Default.RepeatOne
-                                    RepeatMode.ONCE -> Icons.Default.RepeatOneOn
+                                    RepeatMode.OFF -> Icons.Default.Repeat
+                                    RepeatMode.ALL -> Icons.Default.RepeatOn
+                                    RepeatMode.ONE -> Icons.Default.RepeatOneOn
+                                    RepeatMode.ONCE -> Icons.Default.RepeatOne
                                 },
                                 contentDescription = when (repeatMode) {
                                     RepeatMode.OFF -> "Repeat off"

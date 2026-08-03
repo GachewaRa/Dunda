@@ -28,6 +28,12 @@ statistics.
 | 14 | Library cache in Room (foundation for 10–13) | ✅ Done | `data/model/SongEntity.kt`, `SongDao.sync`; [§ Library cache](#3-library-cache-foundational) |
 | 15 | Settings persistence (crossfade, shuffle, repeat mode) | ✅ Done | `data/local/SettingsStore.kt`, `queue_state`; [§ Settings persistence](#9-settings-persistence) |
 
+| 16 | Lock screen / notification controls + headphone buttons (incl. favourite & repeat buttons) | ✅ Done | [§ MediaSession integration](#10-mediasession-integration) |
+| 17 | Audio focus: pause on call, duck for beeps, pause on unplug | ✅ Done | `MusicService` focus handling; [§ Audio focus](#11-audio-focus) |
+| 18 | Draggable playhead with time labels in mini player | ✅ Done | `ui/components/MiniPlayer.kt` |
+| 19 | Search (title / artist / album) | ✅ Done | `ui/screens/HomeScreen.kt` |
+| 20 | Smart playlists: Favourites, Recently Added, Most Played | ✅ Done | `PlaylistDetailScreen` virtual ids -1/-2/-3 |
+
 > Statuses reflect code + JVM unit tests (`app/src/test/`). On-device verification
 > (crossfade feel, notification controls) is tracked separately by the user.
 
@@ -244,6 +250,28 @@ Written on meaningful transitions (song change, mode change, pause), restored in
 **Approach.** Jetpack DataStore (`Preferences`) for user settings: crossfade
 duration, default sort modes, and any future toggles. ViewModels read as Flow;
 service reads once at start and observes changes.
+
+### 10. MediaSession integration
+
+The audible ExoPlayer changes on every crossfade, so `MusicService` calls
+`MediaSession.setPlayer()` with a `ForwardingPlayer` wrapper around the new
+active player on each swap. The wrapper adds SEEK_TO_NEXT/PREVIOUS commands
+(a single-item ExoPlayer doesn't advertise them — the queue lives in
+`QueueManager`) and routes play/pause/next/previous through the service so the
+advance policy and audio focus always apply. Custom session buttons (favourite
+toggle, repeat cycle) are exposed via `setCustomLayout` + `onCustomCommand`;
+their icons update reactively from the favourites flow and repeat mode. This is
+what makes lock screen, notification, and headphone/Bluetooth buttons work.
+
+### 11. Audio focus
+
+The service owns one `AudioFocusRequest` (USAGE_MEDIA / CONTENT_TYPE_MUSIC —
+focus can't be delegated to ExoPlayer's built-in handling because the two
+crossfading players would steal focus from each other). Behavior: permanent
+loss → pause; transient loss (call) → pause and resume after only if we caused
+the pause; duck → volume ×0.3 via `CrossfadePlayer.volumeMultiplier` (applied
+on top of crossfade volumes); headphones unplugged → pause. Starting playback
+is focus-gated: if the request is denied (mid-call), nothing starts.
 
 ---
 

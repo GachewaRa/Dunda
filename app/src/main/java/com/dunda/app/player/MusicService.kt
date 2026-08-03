@@ -1,24 +1,41 @@
 package com.dunda.app.player
 
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import androidx.core.content.ContextCompat
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import com.dunda.app.R
 import com.dunda.app.data.local.AppDatabase
 import com.dunda.app.data.local.SettingsStore
 import com.dunda.app.data.model.PlayEvent
 import com.dunda.app.data.model.QueueState
 import com.dunda.app.data.model.Song
 import com.dunda.app.data.model.toSong
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MusicService : MediaSessionService() {
 
@@ -54,6 +71,8 @@ class MusicService : MediaSessionService() {
             }
         })
 
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
         crossfadePlayer = CrossfadePlayer(this)
         crossfadePlayer.initialize()
 
@@ -76,15 +95,221 @@ class MusicService : MediaSessionService() {
             }
         }
 
+        // Keep UI and notification in sync with actual player state.
+        crossfadePlayer.setOnPlaybackChanged { notifyStateChanged() }
+
+        // The audible ExoPlayer changes on every crossfade; the session must
+        // follow it or lock screen / headphone controls act on the silent one.
+        crossfadePlayer.setOnActivePlayerChanged { active ->
+            mediaSession?.setPlayer(sessionPlayerFor(active))
+        }
+
         val player = crossfadePlayer.getActivePlayer() ?: ExoPlayer.Builder(this).build()
-        mediaSession = MediaSession.Builder(this, player).build()
+        mediaSession = MediaSession.Builder(this, sessionPlayerFor(player))
+            .setCallback(sessionCallback)
+            .build()
+        // The service only manages a session's media notification once the
+        // session is added to it. Normally a connecting MediaController does
+        // this implicitly via onGetSession — but our UI reaches the service
+        // through the singleton, so no controller ever connects and, without
+        // this call, the notification (shade + lock screen) is never posted.
+        mediaSession?.let { addSession(it) }
+        updateCustomLayout()
+
+        ContextCompat.registerReceiver(
+            this,
+            noisyReceiver,
+            IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
 
         serviceScope.launch {
             settings.crossfadeMs.collect { crossfadePlayer.crossfadeDurationMs = it }
         }
+        serviceScope.launch {
+            database.songDao().getFavourites().collect { favs ->
+                favouriteIds = favs.mapTo(mutableSetOf()) { it.id }
+                updateCustomLayout()
+                notifyStateChanged()
+            }
+        }
 
         restorePersistedState()
         trackerHandler.post(trackerRunnable)
+    }
+
+    // ---- media session (lock screen, notification, headphone buttons) ----
+
+    private val cmdToggleFavourite = SessionCommand("dunda.TOGGLE_FAVOURITE", Bundle.EMPTY)
+    private val cmdCycleRepeat = SessionCommand("dunda.CYCLE_REPEAT", Bundle.EMPTY)
+
+    private var favouriteIds: Set<Long> = emptySet()
+    private val currentIsFavourite: Boolean
+        get() = getCurrentSong()?.id?.let { it in favouriteIds } == true
+
+    /**
+     * Session-facing wrapper around the currently audible ExoPlayer. A single
+     * ExoPlayer only ever holds one MediaItem here (the queue lives in
+     * QueueManager), so it doesn't advertise next/previous by itself — this
+     * wrapper adds those commands and routes them, plus play/pause, through the
+     * service so focus handling and the advance policy always apply.
+     */
+    private fun sessionPlayerFor(player: ExoPlayer): Player =
+        object : ForwardingPlayer(player) {
+            override fun getAvailableCommands(): Player.Commands =
+                super.getAvailableCommands().buildUpon()
+                    .add(Player.COMMAND_SEEK_TO_NEXT)
+                    .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    .build()
+
+            override fun isCommandAvailable(command: Int): Boolean =
+                command == Player.COMMAND_SEEK_TO_NEXT ||
+                    command == Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM ||
+                    command == Player.COMMAND_SEEK_TO_PREVIOUS ||
+                    command == Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM ||
+                    super.isCommandAvailable(command)
+
+            override fun seekToNext() = skipNext()
+            override fun seekToNextMediaItem() = skipNext()
+            override fun seekToPrevious() = skipPrevious()
+            override fun seekToPreviousMediaItem() = skipPrevious()
+            override fun play() = resumePlayback()
+            override fun pause() = pausePlayback()
+            override fun setPlayWhenReady(playWhenReady: Boolean) {
+                if (playWhenReady) resumePlayback() else pausePlayback()
+            }
+        }
+
+    private val sessionCallback = object : MediaSession.Callback {
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult {
+            val sessionCommands =
+                MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                    .add(cmdToggleFavourite)
+                    .add(cmdCycleRepeat)
+                    .build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(sessionCommands)
+                .build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> {
+            when (customCommand.customAction) {
+                cmdToggleFavourite.customAction -> toggleCurrentFavourite()
+                cmdCycleRepeat.customAction -> cycleRepeatMode()
+            }
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+    }
+
+    private fun updateCustomLayout() {
+        val favourite = CommandButton.Builder()
+            .setDisplayName(if (currentIsFavourite) "Remove from favourites" else "Add to favourites")
+            .setIconResId(
+                if (currentIsFavourite) R.drawable.ic_favorite else R.drawable.ic_favorite_border
+            )
+            .setSessionCommand(cmdToggleFavourite)
+            .build()
+        val repeat = CommandButton.Builder()
+            .setDisplayName(
+                when (queueManager.repeatMode) {
+                    RepeatMode.OFF -> "Repeat off"
+                    RepeatMode.ALL -> "Repeat all"
+                    RepeatMode.ONE -> "Repeat one"
+                    RepeatMode.ONCE -> "Repeat once"
+                }
+            )
+            .setIconResId(
+                // Four distinct glyphs: notification icons are uniformly
+                // tinted, so state must be legible from shape alone.
+                when (queueManager.repeatMode) {
+                    RepeatMode.OFF -> R.drawable.ic_repeat
+                    RepeatMode.ALL -> R.drawable.ic_repeat_on
+                    RepeatMode.ONE -> R.drawable.ic_repeat_one_on
+                    RepeatMode.ONCE -> R.drawable.ic_repeat_one
+                }
+            )
+            .setSessionCommand(cmdCycleRepeat)
+            .build()
+        mediaSession?.setCustomLayout(listOf(favourite, repeat))
+    }
+
+    private fun toggleCurrentFavourite() {
+        val id = getCurrentSong()?.id ?: return
+        val newValue = !currentIsFavourite
+        serviceScope.launch {
+            withContext(Dispatchers.IO) { database.songDao().setFavourite(id, newValue) }
+            // favourites flow collection updates the layout + listeners
+        }
+    }
+
+    // ---- audio focus ----
+
+    private lateinit var audioManager: AudioManager
+    private var focusRequest: AudioFocusRequest? = null
+    private var resumeOnFocusGain = false
+
+    private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        when (change) {
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                resumeOnFocusGain = false
+                pausePlayback()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                // A call or another transient sound: pause, and remember to
+                // resume ONLY because we paused ourselves — never mid-call.
+                resumeOnFocusGain = crossfadePlayer.isPlaying()
+                pausePlayback()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                crossfadePlayer.volumeMultiplier = 0.3f
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                crossfadePlayer.volumeMultiplier = 1f
+                if (resumeOnFocusGain) {
+                    resumeOnFocusGain = false
+                    crossfadePlayer.resume()
+                    notifyStateChanged()
+                }
+            }
+        }
+    }
+
+    private fun requestAudioFocus(): Boolean {
+        val request = focusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+            .setOnAudioFocusChangeListener(focusListener)
+            .build()
+            .also { focusRequest = it }
+        return audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    }
+
+    private fun abandonAudioFocus() {
+        focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+    }
+
+    /** Headphones unplugged: pause rather than blast the speaker. */
+    private val noisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                resumeOnFocusGain = false
+                pausePlayback()
+            }
+        }
     }
 
     // ---- play tracking (docs/FEATURES.md §5) ----
@@ -101,6 +326,7 @@ class MusicService : MediaSessionService() {
     private fun onCurrentSongStarted() {
         getCurrentSong()?.let { playTracker.startInstance(it.id, it.duration) }
         queueNextForCrossfade()
+        updateCustomLayout()   // favourite button reflects the new song
         persistState()
         notifyStateChanged()
     }
@@ -134,6 +360,8 @@ class MusicService : MediaSessionService() {
 
     private fun playCurrentSong() {
         val song = getCurrentSong() ?: return
+        // Focus-gated: during a call the request is denied and nothing starts.
+        if (!requestAudioFocus()) return
         crossfadePlayer.play(buildMediaItem(song))
         onCurrentSongStarted()
     }
@@ -155,12 +383,20 @@ class MusicService : MediaSessionService() {
     }
 
     fun playPause() {
-        if (crossfadePlayer.isPlaying()) {
-            crossfadePlayer.pause()
-            persistState()
-        } else {
-            crossfadePlayer.resume()
-        }
+        if (crossfadePlayer.isPlaying()) pausePlayback() else resumePlayback()
+    }
+
+    fun pausePlayback() {
+        crossfadePlayer.pause()
+        persistState()
+        notifyStateChanged()
+    }
+
+    fun resumePlayback() {
+        if (getCurrentSong() == null) return
+        if (!requestAudioFocus()) return
+        crossfadePlayer.volumeMultiplier = 1f
+        crossfadePlayer.resume()
         notifyStateChanged()
     }
 
@@ -226,6 +462,7 @@ class MusicService : MediaSessionService() {
     /** A mode change can invalidate what's preloaded for crossfade. */
     private fun onModeChanged() {
         queueNextForCrossfade()
+        updateCustomLayout()
         persistState()
         notifyStateChanged()
     }
@@ -306,6 +543,7 @@ class MusicService : MediaSessionService() {
                     .setTitle(song.title)
                     .setArtist(song.artist)
                     .setAlbumTitle(song.album)
+                    .setArtworkUri(song.albumArtUri)
                     .build()
             )
             .build()
@@ -340,6 +578,8 @@ class MusicService : MediaSessionService() {
     override fun onDestroy() {
         instance = null
         persistState()
+        unregisterReceiver(noisyReceiver)
+        abandonAudioFocus()
         trackerHandler.removeCallbacks(trackerRunnable)
         serviceScope.cancel()
         crossfadePlayer.release()

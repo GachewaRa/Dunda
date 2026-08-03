@@ -41,11 +41,11 @@ import kotlinx.coroutines.delay
 class MainActivity : ComponentActivity() {
 
     private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            // Permission granted — songs will be loaded by the ViewModel
-        }
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        // Audio permission drives the library scan (ViewModel reloads);
+        // POST_NOTIFICATIONS makes the media notification / lock screen
+        // player visible on Android 13+.
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,9 +74,11 @@ class MainActivity : ComponentActivity() {
                     allSongs.firstOrNull { it.id == playing.id }?.isFavourite
                 } ?: false
 
-                // Periodically update playback position
-                LaunchedEffect(isPlaying) {
-                    while (isPlaying) {
+                // Periodically refresh position + play state. Unconditional:
+                // gating this on isPlaying wedged the UI at "paused" forever
+                // when the initial state was stale.
+                LaunchedEffect(Unit) {
+                    while (true) {
                         playerViewModel.tickPosition()
                         delay(250)
                     }
@@ -144,6 +146,7 @@ class MainActivity : ComponentActivity() {
                             onPlayPause = { playerViewModel.playPause() },
                             onSkipNext = { playerViewModel.skipNext() },
                             onSkipPrevious = { playerViewModel.skipPrevious() },
+                            onSeekTo = { playerViewModel.seekTo(it) },
                             onToggleShuffle = { playerViewModel.toggleShuffle() },
                             onCycleRepeat = { playerViewModel.cycleRepeatMode() },
                             onToggleSolo = { playerViewModel.toggleSoloMode() },
@@ -165,14 +168,28 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestAudioPermission() {
-        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val needed = mutableListOf<String>()
+
+        val audioPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Manifest.permission.READ_MEDIA_AUDIO
         } else {
             Manifest.permission.READ_EXTERNAL_STORAGE
         }
+        if (ContextCompat.checkSelfPermission(this, audioPermission) != PackageManager.PERMISSION_GRANTED) {
+            needed.add(audioPermission)
+        }
 
-        if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissionLauncher.launch(permission)
+        // Android 13+: notifications (incl. the media/lock screen player) are
+        // invisible unless this runtime permission is granted.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        if (needed.isNotEmpty()) {
+            requestPermissionLauncher.launch(needed.toTypedArray())
         }
     }
 }

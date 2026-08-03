@@ -23,15 +23,43 @@ class CrossfadePlayer(private val context: Context) {
     var crossfadeDurationMs: Long = 10_000L  // default 10 seconds
     private var isCrossfading = false
 
+    /**
+     * Global attenuation applied on top of crossfade volumes — used for audio
+     * focus ducking (e.g. 0.3 while a notification sounds). Crossfade math
+     * stays in "base" volume space and this multiplier is applied at the end.
+     */
+    var volumeMultiplier: Float = 1f
+        set(value) {
+            field = value
+            if (!isCrossfading) activePlayer?.volume = 1f * value
+            // During a crossfade the 100ms monitor tick reapplies volumes.
+        }
+
     private val handler = Handler(Looper.getMainLooper())
     private var onSongTransition: (() -> Unit)? = null
     private var onPlaybackComplete: (() -> Unit)? = null
+    private var onPlaybackChanged: (() -> Unit)? = null
+    private var onActivePlayerChanged: ((ExoPlayer) -> Unit)? = null
 
     fun initialize() {
         playerA = ExoPlayer.Builder(context).build()
         playerB = ExoPlayer.Builder(context).build()
         activePlayer = playerA
         inactivePlayer = playerB
+
+        // Push play/pause/buffering changes to the service so UI and the media
+        // notification stay in sync without polling.
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                onPlaybackChanged?.invoke()
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                onPlaybackChanged?.invoke()
+            }
+        }
+        playerA?.addListener(listener)
+        playerB?.addListener(listener)
     }
 
     fun getActivePlayer(): ExoPlayer? = activePlayer
@@ -44,12 +72,21 @@ class CrossfadePlayer(private val context: Context) {
         onPlaybackComplete = callback
     }
 
+    fun setOnPlaybackChanged(callback: () -> Unit) {
+        onPlaybackChanged = callback
+    }
+
+    /** Fired after a crossfade swap; the argument is the now-audible player. */
+    fun setOnActivePlayerChanged(callback: (ExoPlayer) -> Unit) {
+        onActivePlayerChanged = callback
+    }
+
     fun play(mediaItem: MediaItem) {
         stopCrossfade()
         activePlayer?.apply {
             setMediaItem(mediaItem)
             prepare()
-            volume = 1f
+            volume = 1f * volumeMultiplier
             playWhenReady = true
         }
         startMonitoring()
@@ -179,8 +216,8 @@ class CrossfadePlayer(private val context: Context) {
         val remaining = player.duration - player.currentPosition
         val progress = 1f - (remaining.toFloat() / crossfadeDurationMs.toFloat()).coerceIn(0f, 1f)
 
-        activePlayer?.volume = (1f - progress).coerceIn(0f, 1f)
-        inactivePlayer?.volume = progress.coerceIn(0f, 1f)
+        activePlayer?.volume = (1f - progress).coerceIn(0f, 1f) * volumeMultiplier
+        inactivePlayer?.volume = progress.coerceIn(0f, 1f) * volumeMultiplier
     }
 
     private fun finishCrossfade() {
@@ -195,7 +232,8 @@ class CrossfadePlayer(private val context: Context) {
         activePlayer = inactivePlayer
         inactivePlayer = temp
 
-        activePlayer?.volume = 1f
+        activePlayer?.volume = 1f * volumeMultiplier
+        activePlayer?.let { onActivePlayerChanged?.invoke(it) }
         onSongTransition?.invoke()
     }
 
