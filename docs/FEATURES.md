@@ -33,6 +33,8 @@ statistics.
 | 18 | Draggable playhead with time labels in mini player | ✅ Done | `ui/components/MiniPlayer.kt` |
 | 19 | Search (title / artist / album) | ✅ Done | `ui/screens/HomeScreen.kt` |
 | 20 | Smart playlists: Favourites, Recently Added, Most Played | ✅ Done | `PlaylistDetailScreen` virtual ids -1/-2/-3 |
+| 21 | Playlist management: create (FAB no longer obscured), delete w/ confirmation + cascade, remove song from playlist | ✅ Done | `PlaylistScreen`, `PlaylistDao.deletePlaylistWithSongs` |
+| 22 | Multi-select on Home (long-press): add many songs to a playlist / new playlist at once | ✅ Done | `HomeScreen` selection mode, `PlaylistDao.addSongsToPlaylist` |
 
 > Statuses reflect code + JVM unit tests (`app/src/test/`). On-device verification
 > (crossfade feel, notification controls) is tracked separately by the user.

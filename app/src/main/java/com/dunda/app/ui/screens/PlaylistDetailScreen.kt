@@ -203,6 +203,10 @@ fun PlaylistDetailScreen(
                         onClick = {
                             playerViewModel.playSong(song, displayedSongs)
                         },
+                        // Only real playlists have removable membership
+                        onRemoveFromPlaylist = if (!isVirtual) {
+                            { musicViewModel.removeSongFromPlaylist(playlistId, song.id) }
+                        } else null,
                         onToggleFavourite = { musicViewModel.toggleFavourite(song) }
                     )
                 }

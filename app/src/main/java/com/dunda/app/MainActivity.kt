@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -24,7 +25,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -89,9 +89,37 @@ class MainActivity : ComponentActivity() {
 
                 Scaffold(
                     bottomBar = {
-                        // Only show bottom nav on main screens
-                        if (currentRoute == Routes.HOME || currentRoute == Routes.PLAYLISTS) {
-                            NavigationBar {
+                        // MiniPlayer lives in the bottom bar (not a floating
+                        // overlay) so Scaffold pads content above it — nothing
+                        // (e.g. the create-playlist FAB) can hide beneath it.
+                        Column {
+                            MiniPlayer(
+                                song = currentSong,
+                                isPlaying = isPlaying,
+                                currentPosition = position,
+                                duration = duration,
+                                isShuffleEnabled = isShuffleEnabled,
+                                repeatMode = repeatMode,
+                                isSoloMode = isSoloMode,
+                                isFavourite = currentIsFavourite,
+                                onPlayPause = { playerViewModel.playPause() },
+                                onSkipNext = { playerViewModel.skipNext() },
+                                onSkipPrevious = { playerViewModel.skipPrevious() },
+                                onSeekTo = { playerViewModel.seekTo(it) },
+                                onToggleShuffle = { playerViewModel.toggleShuffle() },
+                                onCycleRepeat = { playerViewModel.cycleRepeatMode() },
+                                onToggleSolo = { playerViewModel.toggleSoloMode() },
+                                onToggleFavourite = {
+                                    currentSong?.let { playing ->
+                                        allSongs.firstOrNull { it.id == playing.id }
+                                            ?.let { musicViewModel.toggleFavourite(it) }
+                                    }
+                                },
+                                onClick = { /* TODO: expand to full player screen */ }
+                            )
+                            // Only show bottom nav on main screens
+                            if (currentRoute == Routes.HOME || currentRoute == Routes.PLAYLISTS) {
+                                NavigationBar {
                                 NavigationBarItem(
                                     icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
                                     label = { Text("Songs") },
@@ -116,50 +144,20 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 )
+                                }
                             }
                         }
                     }
                 ) { innerPadding ->
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(innerPadding)
-                        ) {
-                            DundaNavGraph(
-                                navController = navController,
-                                musicViewModel = musicViewModel,
-                                playerViewModel = playerViewModel
-                            )
-                        }
-
-                        // Floating Mini Player
-                        MiniPlayer(
-                            song = currentSong,
-                            isPlaying = isPlaying,
-                            currentPosition = position,
-                            duration = duration,
-                            isShuffleEnabled = isShuffleEnabled,
-                            repeatMode = repeatMode,
-                            isSoloMode = isSoloMode,
-                            isFavourite = currentIsFavourite,
-                            onPlayPause = { playerViewModel.playPause() },
-                            onSkipNext = { playerViewModel.skipNext() },
-                            onSkipPrevious = { playerViewModel.skipPrevious() },
-                            onSeekTo = { playerViewModel.seekTo(it) },
-                            onToggleShuffle = { playerViewModel.toggleShuffle() },
-                            onCycleRepeat = { playerViewModel.cycleRepeatMode() },
-                            onToggleSolo = { playerViewModel.toggleSoloMode() },
-                            onToggleFavourite = {
-                                currentSong?.let { playing ->
-                                    allSongs.firstOrNull { it.id == playing.id }
-                                        ?.let { musicViewModel.toggleFavourite(it) }
-                                }
-                            },
-                            onClick = { /* TODO: expand to full player screen */ },
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = innerPadding.calculateBottomPadding())
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        DundaNavGraph(
+                            navController = navController,
+                            musicViewModel = musicViewModel,
+                            playerViewModel = playerViewModel
                         )
                     }
                 }

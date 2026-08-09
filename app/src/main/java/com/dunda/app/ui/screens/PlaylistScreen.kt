@@ -49,7 +49,14 @@ fun PlaylistScreen(
     onPlaylistClick: (Long) -> Unit
 ) {
     val playlists by musicViewModel.playlists.collectAsState()
+    val songCounts by musicViewModel.playlistSongCounts.collectAsState()
+    val allSongs by musicViewModel.songs.collectAsState()
+    val favourites by musicViewModel.favourites.collectAsState()
+    val playCounts by musicViewModel.playCounts.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
+    var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
+
+    val mostPlayedCount = allSongs.count { (playCounts[it.id] ?: 0) > 0 }
 
     Scaffold(
         topBar = {
@@ -75,7 +82,12 @@ fun PlaylistScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                VirtualPlaylists(onPlaylistClick)
+                VirtualPlaylists(
+                    favouritesCount = favourites.size,
+                    libraryCount = allSongs.size,
+                    mostPlayedCount = mostPlayedCount,
+                    onPlaylistClick = onPlaylistClick
+                )
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -106,13 +118,21 @@ fun PlaylistScreen(
                     .padding(padding)
             ) {
                 item(key = "virtual") {
-                    Column { VirtualPlaylists(onPlaylistClick) }
+                    Column {
+                        VirtualPlaylists(
+                            favouritesCount = favourites.size,
+                            libraryCount = allSongs.size,
+                            mostPlayedCount = mostPlayedCount,
+                            onPlaylistClick = onPlaylistClick
+                        )
+                    }
                 }
                 items(playlists, key = { it.id }) { playlist ->
                     PlaylistItem(
                         playlist = playlist,
+                        songCount = songCounts[playlist.id] ?: 0,
                         onClick = { onPlaylistClick(playlist.id) },
-                        onDelete = { musicViewModel.deletePlaylist(playlist) }
+                        onDelete = { playlistToDelete = playlist }
                     )
                 }
             }
@@ -125,6 +145,23 @@ fun PlaylistScreen(
             onCreate = { name ->
                 musicViewModel.createPlaylist(name)
                 showCreateDialog = false
+            }
+        )
+    }
+
+    playlistToDelete?.let { playlist ->
+        AlertDialog(
+            onDismissRequest = { playlistToDelete = null },
+            title = { Text("Delete playlist?") },
+            text = { Text("\"${playlist.name}\" will be deleted. Songs themselves are not removed from your library.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    musicViewModel.deletePlaylist(playlist)
+                    playlistToDelete = null
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { playlistToDelete = null }) { Text("Cancel") }
             }
         )
     }
@@ -157,23 +194,30 @@ private fun VirtualPlaylistItem(
     }
 }
 
+fun songCountLabel(count: Int): String = if (count == 1) "1 song" else "$count songs"
+
 @Composable
-private fun VirtualPlaylists(onPlaylistClick: (Long) -> Unit) {
+private fun VirtualPlaylists(
+    favouritesCount: Int,
+    libraryCount: Int,
+    mostPlayedCount: Int,
+    onPlaylistClick: (Long) -> Unit
+) {
     VirtualPlaylistItem(
         name = "Favourites",
-        subtitle = "Songs you've hearted",
+        subtitle = "Songs you've hearted • ${songCountLabel(favouritesCount)}",
         icon = Icons.Default.Favorite,
         onClick = { onPlaylistClick(FAVOURITES_PLAYLIST_ID) }
     )
     VirtualPlaylistItem(
         name = "Recently Added",
-        subtitle = "Newest songs first",
+        subtitle = "Newest songs first • ${songCountLabel(libraryCount)}",
         icon = Icons.Default.NewReleases,
         onClick = { onPlaylistClick(RECENTLY_ADDED_PLAYLIST_ID) }
     )
     VirtualPlaylistItem(
         name = "Most Played",
-        subtitle = "Your all-time top songs",
+        subtitle = "Your all-time top songs • ${songCountLabel(mostPlayedCount)}",
         icon = Icons.AutoMirrored.Filled.TrendingUp,
         onClick = { onPlaylistClick(MOST_PLAYED_PLAYLIST_ID) }
     )
@@ -182,6 +226,7 @@ private fun VirtualPlaylists(onPlaylistClick: (Long) -> Unit) {
 @Composable
 private fun PlaylistItem(
     playlist: Playlist,
+    songCount: Int,
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -202,6 +247,11 @@ private fun PlaylistItem(
             Text(
                 text = playlist.name,
                 style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = songCountLabel(songCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
         }
         IconButton(onClick = onDelete) {

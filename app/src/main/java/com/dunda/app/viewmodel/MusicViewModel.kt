@@ -38,6 +38,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val playlists = repository.getAllPlaylists()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
+    val playlistSongCounts: StateFlow<Map<Long, Int>> = repository.playlistSongCounts
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
+
     init {
         loadSongs()
         viewModelScope.launch {
@@ -110,6 +113,20 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun addSongToPlaylist(playlistId: Long, songId: Long) {
         viewModelScope.launch {
             repository.addSongToPlaylist(playlistId, songId)
+        }
+    }
+
+    fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>) {
+        viewModelScope.launch {
+            repository.addSongsToPlaylist(playlistId, songIds)
+        }
+    }
+
+    /** Create a playlist and put [songIds] in it, in one go (multi-select flow). */
+    fun createPlaylistWithSongs(name: String, songIds: List<Long>) {
+        viewModelScope.launch {
+            val id = repository.createPlaylist(name)
+            repository.addSongsToPlaylist(id, songIds)
         }
     }
 

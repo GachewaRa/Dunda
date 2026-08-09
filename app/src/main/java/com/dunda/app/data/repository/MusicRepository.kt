@@ -59,12 +59,17 @@ class MusicRepository(context: Context) {
     // Playlist operations
     fun getAllPlaylists(): Flow<List<Playlist>> = playlistDao.getAllPlaylists()
 
+    /** Song count per playlist id (playlists with no songs absent). */
+    val playlistSongCounts: Flow<Map<Long, Int>> =
+        playlistDao.getPlaylistSongCounts()
+            .map { rows -> rows.associate { it.playlistId to it.songCount } }
+
     suspend fun createPlaylist(name: String): Long {
         return playlistDao.insertPlaylist(Playlist(name = name))
     }
 
     suspend fun deletePlaylist(playlist: Playlist) {
-        playlistDao.deletePlaylist(playlist)
+        playlistDao.deletePlaylistWithSongs(playlist)
     }
 
     fun getPlaylistSongIds(playlistId: Long): Flow<List<Long>> {
@@ -73,6 +78,10 @@ class MusicRepository(context: Context) {
 
     suspend fun addSongToPlaylist(playlistId: Long, songId: Long) {
         playlistDao.addSongToPlaylist(playlistId, songId)
+    }
+
+    suspend fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>) {
+        playlistDao.addSongsToPlaylist(playlistId, songIds)
     }
 
     suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) {

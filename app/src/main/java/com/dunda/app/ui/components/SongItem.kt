@@ -1,6 +1,8 @@
 package com.dunda.app.ui.components
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
@@ -33,14 +36,18 @@ import androidx.compose.ui.unit.dp
 import com.dunda.app.data.model.Playlist
 import com.dunda.app.data.model.Song
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SongItem(
     song: Song,
     isCurrentSong: Boolean = false,
     playlists: List<Playlist> = emptyList(),
     playCount: Int? = null,
+    isSelected: Boolean = false,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     onAddToPlaylist: ((Long) -> Unit)? = null,
+    onRemoveFromPlaylist: (() -> Unit)? = null,
     onToggleFavourite: (() -> Unit)? = null
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -48,19 +55,23 @@ fun SongItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .background(
+                if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                else MaterialTheme.colorScheme.surface.copy(alpha = 0f)
+            )
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Album art placeholder
+        // Album art placeholder; selection check when selected
         Icon(
-            imageVector = Icons.Default.MusicNote,
-            contentDescription = null,
+            imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.MusicNote,
+            contentDescription = if (isSelected) "Selected" else null,
             modifier = Modifier
                 .size(48.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .padding(8.dp),
-            tint = if (isCurrentSong) MaterialTheme.colorScheme.primary
+            tint = if (isSelected || isCurrentSong) MaterialTheme.colorScheme.primary
                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
         )
 
@@ -114,8 +125,9 @@ fun SongItem(
             }
         }
 
-        // More options (add to playlist)
-        if (onAddToPlaylist != null && playlists.isNotEmpty()) {
+        // More options (add to / remove from playlist)
+        val hasAddMenu = onAddToPlaylist != null && playlists.isNotEmpty()
+        if (hasAddMenu || onRemoveFromPlaylist != null) {
             IconButton(onClick = { showMenu = true }) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
@@ -128,11 +140,27 @@ fun SongItem(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false }
             ) {
-                playlists.forEach { playlist ->
+                if (hasAddMenu) {
+                    playlists.forEach { playlist ->
+                        DropdownMenuItem(
+                            text = { Text("Add to ${playlist.name}") },
+                            onClick = {
+                                onAddToPlaylist?.invoke(playlist.id)
+                                showMenu = false
+                            }
+                        )
+                    }
+                }
+                if (onRemoveFromPlaylist != null) {
                     DropdownMenuItem(
-                        text = { Text("Add to ${playlist.name}") },
+                        text = {
+                            Text(
+                                "Remove from this playlist",
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        },
                         onClick = {
-                            onAddToPlaylist(playlist.id)
+                            onRemoveFromPlaylist()
                             showMenu = false
                         }
                     )

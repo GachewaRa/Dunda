@@ -1,5 +1,6 @@
 package com.dunda.app.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,12 +10,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -24,6 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -64,6 +69,14 @@ fun HomeScreen(
     var searchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
+    // Multi-select: long-press enters selection mode, tap toggles membership
+    var selectedIds by remember { mutableStateOf(setOf<Long>()) }
+    val selectionMode = selectedIds.isNotEmpty()
+    var showAddToPlaylistDialog by remember { mutableStateOf(false) }
+    var showNewPlaylistDialog by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = selectionMode) { selectedIds = emptySet() }
+
     val sortedSongs = musicViewModel.sortSongs(songs, sortMode)
     val visibleSongs = if (searchActive && searchQuery.isNotBlank()) {
         sortedSongs.filter {
@@ -74,6 +87,32 @@ fun HomeScreen(
     } else sortedSongs
 
     Column(modifier = Modifier.fillMaxSize()) {
+        if (selectionMode) {
+            TopAppBar(
+                title = { Text("${selectedIds.size} selected") },
+                navigationIcon = {
+                    IconButton(onClick = { selectedIds = emptySet() }) {
+                        Icon(Icons.Default.Close, contentDescription = "Cancel selection")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        selectedIds = visibleSongs.mapTo(mutableSetOf()) { it.id }
+                    }) {
+                        Icon(Icons.Default.SelectAll, contentDescription = "Select all")
+                    }
+                    IconButton(onClick = { showAddToPlaylistDialog = true }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.PlaylistAdd,
+                            contentDescription = "Add selected to playlist"
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        } else {
         TopAppBar(
             title = {
                 if (searchActive) {
@@ -156,6 +195,7 @@ fun HomeScreen(
                 containerColor = MaterialTheme.colorScheme.background
             )
         )
+        }
 
         if (isLoading) {
             Box(
@@ -188,10 +228,18 @@ fun HomeScreen(
                         isCurrentSong = song.id == currentSong?.id,
                         playlists = playlists,
                         playCount = playCounts[song.id] ?: 0,
+                        isSelected = song.id in selectedIds,
                         onClick = {
-                            // Queue is what's on screen: search results included
-                            playerViewModel.playSong(song, visibleSongs)
+                            if (selectionMode) {
+                                selectedIds =
+                                    if (song.id in selectedIds) selectedIds - song.id
+                                    else selectedIds + song.id
+                            } else {
+                                // Queue is what's on screen: search results included
+                                playerViewModel.playSong(song, visibleSongs)
+                            }
                         },
+                        onLongClick = { selectedIds = selectedIds + song.id },
                         onAddToPlaylist = { playlistId ->
                             musicViewModel.addSongToPlaylist(playlistId, song.id)
                         },
@@ -200,5 +248,60 @@ fun HomeScreen(
                 }
             }
         }
+    }
+
+    if (showAddToPlaylistDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddToPlaylistDialog = false },
+            title = { Text("Add ${selectedIds.size} songs to…") },
+            text = {
+                Column {
+                    TextButton(onClick = {
+                        showAddToPlaylistDialog = false
+                        showNewPlaylistDialog = true
+                    }) { Text("+ New playlist…") }
+                    playlists.forEach { playlist ->
+                        TextButton(onClick = {
+                            musicViewModel.addSongsToPlaylist(playlist.id, selectedIds.toList())
+                            selectedIds = emptySet()
+                            showAddToPlaylistDialog = false
+                        }) { Text(playlist.name) }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showAddToPlaylistDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showNewPlaylistDialog) {
+        var name by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showNewPlaylistDialog = false },
+            title = { Text("New playlist with ${selectedIds.size} songs") },
+            text = {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Playlist name") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        musicViewModel.createPlaylistWithSongs(name.trim(), selectedIds.toList())
+                        selectedIds = emptySet()
+                        showNewPlaylistDialog = false
+                    },
+                    enabled = name.isNotBlank()
+                ) { Text("Create") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNewPlaylistDialog = false }) { Text("Cancel") }
+            }
+        )
     }
 }
