@@ -29,6 +29,9 @@ interface SongDao {
     @Query("UPDATE songs SET isFavourite = :favourite WHERE id = :songId")
     suspend fun setFavourite(songId: Long, favourite: Boolean)
 
+    @Query("UPDATE songs SET customTitle = :title, customArtist = :artist WHERE id = :songId")
+    suspend fun setCustomMetadata(songId: Long, title: String?, artist: String?)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(songs: List<SongEntity>)
 
@@ -46,7 +49,12 @@ interface SongDao {
         val existing = getAllOnce().associateBy { it.id }
         val merged = scanned.map { s ->
             val old = existing[s.id]
-            if (old != null) s.copy(isFavourite = old.isFavourite, bpm = old.bpm ?: s.bpm)
+            if (old != null) s.copy(
+                isFavourite = old.isFavourite,
+                bpm = old.bpm ?: s.bpm,
+                customTitle = old.customTitle,
+                customArtist = old.customArtist,
+            )
             else s
         }
         markAllAbsent()

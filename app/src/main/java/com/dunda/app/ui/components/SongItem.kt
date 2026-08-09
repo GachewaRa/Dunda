@@ -48,7 +48,8 @@ fun SongItem(
     onLongClick: (() -> Unit)? = null,
     onAddToPlaylist: ((Long) -> Unit)? = null,
     onRemoveFromPlaylist: (() -> Unit)? = null,
-    onToggleFavourite: (() -> Unit)? = null
+    onToggleFavourite: (() -> Unit)? = null,
+    onEditInfo: (() -> Unit)? = null
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -125,9 +126,9 @@ fun SongItem(
             }
         }
 
-        // More options (add to / remove from playlist)
+        // More options (edit info / add to / remove from playlist)
         val hasAddMenu = onAddToPlaylist != null && playlists.isNotEmpty()
-        if (hasAddMenu || onRemoveFromPlaylist != null) {
+        if (hasAddMenu || onRemoveFromPlaylist != null || onEditInfo != null) {
             IconButton(onClick = { showMenu = true }) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
@@ -140,6 +141,15 @@ fun SongItem(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false }
             ) {
+                if (onEditInfo != null) {
+                    DropdownMenuItem(
+                        text = { Text("Edit info") },
+                        onClick = {
+                            onEditInfo()
+                            showMenu = false
+                        }
+                    )
+                }
                 if (hasAddMenu) {
                     playlists.forEach { playlist ->
                         DropdownMenuItem(

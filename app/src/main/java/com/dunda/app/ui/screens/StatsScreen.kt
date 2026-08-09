@@ -76,6 +76,7 @@ fun StatsScreen(
 ) {
     var period by rememberSaveable { mutableStateOf(StatsPeriod.MONTH) }
     var mostFirst by rememberSaveable { mutableStateOf(true) }
+    var showArtists by rememberSaveable { mutableStateOf(false) }
 
     val (from, to) = remember(period) { period.range() }
     val stats by remember(from, to) { musicViewModel.statsInRange(from, to) }
@@ -139,7 +140,87 @@ fun StatsScreen(
             ) { Text("Least played") }
         }
 
-        if (ranked.isEmpty()) {
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+        ) {
+            SegmentedButton(
+                selected = !showArtists,
+                onClick = { showArtists = false },
+                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+            ) { Text("Songs") }
+            SegmentedButton(
+                selected = showArtists,
+                onClick = { showArtists = true },
+                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+            ) { Text("Artists") }
+        }
+
+        if (showArtists) {
+            // Aggregate song stats by display artist (overrides applied)
+            val artistStats = remember(stats, mostFirst) {
+                stats.groupBy { it.song.customArtist ?: it.song.artist }
+                    .map { (artist, songStats) ->
+                        ArtistStats(
+                            artist = artist,
+                            playCount = songStats.sumOf { it.playCount },
+                            songCount = songStats.size,
+                        )
+                    }
+                    .sortedWith(
+                        if (mostFirst) compareByDescending<ArtistStats> { it.playCount }
+                            .thenBy { it.artist.lowercase() }
+                        else compareBy<ArtistStats> { it.playCount }
+                            .thenBy { it.artist.lowercase() }
+                    )
+            }
+            if (artistStats.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "No listening data yet",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                    itemsIndexed(artistStats, key = { _, a -> a.artist }) { index, stat ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${index + 1}",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.width(36.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stat.artist,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = if (stat.songCount == 1) "1 song" else "${stat.songCount} songs",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                            Text(
+                                text = if (stat.playCount == 1) "1 play" else "${stat.playCount} plays",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                    }
+                }
+            }
+        } else if (ranked.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     "No listening data yet",
@@ -163,6 +244,8 @@ fun StatsScreen(
         }
     }
 }
+
+private data class ArtistStats(val artist: String, val playCount: Int, val songCount: Int)
 
 private val lastPlayedFormat = DateTimeFormatter.ofPattern("d MMM yyyy")
 

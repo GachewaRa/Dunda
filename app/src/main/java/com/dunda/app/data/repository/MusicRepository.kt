@@ -46,6 +46,19 @@ class MusicRepository(context: Context) {
         songDao.setFavourite(songId, favourite)
     }
 
+    /**
+     * Set display metadata overrides. Blank or scanned-identical values are
+     * stored as null so "no override" stays distinguishable from an edit.
+     */
+    suspend fun setSongInfo(songId: Long, title: String, artist: String) {
+        val raw = songDao.getById(songId) ?: return
+        songDao.setCustomMetadata(
+            songId = songId,
+            title = title.trim().takeIf { it.isNotEmpty() && it != raw.title },
+            artist = artist.trim().takeIf { it.isNotEmpty() && it != raw.artist },
+        )
+    }
+
     // Play statistics (docs/FEATURES.md §6)
 
     fun statsInRange(from: Long, to: Long): Flow<List<SongPlayStats>> =

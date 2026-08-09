@@ -35,6 +35,11 @@ statistics.
 | 20 | Smart playlists: Favourites, Recently Added, Most Played | ✅ Done | `PlaylistDetailScreen` virtual ids -1/-2/-3 |
 | 21 | Playlist management: create (FAB no longer obscured), delete w/ confirmation + cascade, remove song from playlist | ✅ Done | `PlaylistScreen`, `PlaylistDao.deletePlaylistWithSongs` |
 | 22 | Multi-select on Home (long-press): add many songs to a playlist / new playlist at once | ✅ Done | `HomeScreen` selection mode, `PlaylistDao.addSongsToPlaylist` |
+| 23 | Metadata overrides: customTitle/customArtist columns (Room v3), survive rescans, "Edit info" dialog per song | ✅ Done | `SongEntity`, `MusicRepository.setSongInfo`, `HomeScreen` |
+| 24 | Artist statistics: most/least-listened artists with period filters | ✅ Done | `StatsScreen` Artists mode |
+| 25 | One-time library cleanup: 1,254 songs assigned artist+title, 243 title-cleaned (of 1,578); junk files skipped. Applied 2026-08-09 via adb into overrides | ✅ Done | scripts in session scratchpad; data lives in `songs.customTitle/customArtist` |
+| 26 | Now Playing screen: album art (Coil), song details incl. play count, seek bar, full controls (shuffle/repeat/solo/favourite). Opens on song tap and mini-player tap | ✅ Done | `ui/screens/NowPlayingScreen.kt`, route `now_playing` |
+| 27 | Artists browsing: Artists tab (song/play counts per artist), artist detail page with shuffle-play; artist name in Now Playing is clickable | ✅ Done | `ArtistsScreen.kt`, `ArtistDetailScreen.kt`, routes `artists`, `artist/{name}` |
 
 > Statuses reflect code + JVM unit tests (`app/src/test/`). On-device verification
 > (crossfade feel, notification controls) is tracked separately by the user.

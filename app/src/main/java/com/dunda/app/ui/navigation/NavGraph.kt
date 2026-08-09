@@ -1,12 +1,16 @@
 package com.dunda.app.ui.navigation
 
+import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.dunda.app.ui.screens.ArtistDetailScreen
+import com.dunda.app.ui.screens.ArtistsScreen
 import com.dunda.app.ui.screens.HomeScreen
+import com.dunda.app.ui.screens.NowPlayingScreen
 import com.dunda.app.ui.screens.PlaylistDetailScreen
 import com.dunda.app.ui.screens.PlaylistScreen
 import com.dunda.app.ui.screens.SettingsScreen
@@ -20,8 +24,14 @@ object Routes {
     const val PLAYLIST_DETAIL = "playlist/{playlistId}"
     const val SETTINGS = "settings"
     const val STATS = "stats"
+    const val NOW_PLAYING = "now_playing"
+    const val ARTISTS = "artists"
+    const val ARTIST_DETAIL = "artist/{artistName}"
 
     fun playlistDetail(playlistId: Long) = "playlist/$playlistId"
+
+    /** Artist names may contain any character — always travel encoded. */
+    fun artistDetail(artistName: String) = "artist/${Uri.encode(artistName)}"
 }
 
 @Composable
@@ -39,7 +49,8 @@ fun DundaNavGraph(
                 musicViewModel = musicViewModel,
                 playerViewModel = playerViewModel,
                 onSettingsClick = { navController.navigate(Routes.SETTINGS) },
-                onStatsClick = { navController.navigate(Routes.STATS) }
+                onStatsClick = { navController.navigate(Routes.STATS) },
+                onOpenNowPlaying = { navController.navigate(Routes.NOW_PLAYING) }
             )
         }
 
@@ -61,7 +72,8 @@ fun DundaNavGraph(
                 playlistId = playlistId,
                 musicViewModel = musicViewModel,
                 playerViewModel = playerViewModel,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onOpenNowPlaying = { navController.navigate(Routes.NOW_PLAYING) }
             )
         }
 
@@ -77,6 +89,41 @@ fun DundaNavGraph(
                 musicViewModel = musicViewModel,
                 playerViewModel = playerViewModel,
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.NOW_PLAYING) {
+            NowPlayingScreen(
+                musicViewModel = musicViewModel,
+                playerViewModel = playerViewModel,
+                onBack = { navController.popBackStack() },
+                onArtistClick = { artist ->
+                    navController.navigate(Routes.artistDetail(artist))
+                }
+            )
+        }
+
+        composable(Routes.ARTISTS) {
+            ArtistsScreen(
+                musicViewModel = musicViewModel,
+                onArtistClick = { artist ->
+                    navController.navigate(Routes.artistDetail(artist))
+                }
+            )
+        }
+
+        composable(
+            route = Routes.ARTIST_DETAIL,
+            arguments = listOf(navArgument("artistName") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val artistName = backStackEntry.arguments?.getString("artistName")
+                ?: return@composable
+            ArtistDetailScreen(
+                artistName = artistName,
+                musicViewModel = musicViewModel,
+                playerViewModel = playerViewModel,
+                onBack = { navController.popBackStack() },
+                onOpenNowPlaying = { navController.navigate(Routes.NOW_PLAYING) }
             )
         }
     }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -93,6 +94,8 @@ class MainActivity : ComponentActivity() {
                         // overlay) so Scaffold pads content above it — nothing
                         // (e.g. the create-playlist FAB) can hide beneath it.
                         Column {
+                            // Hidden on the Now Playing screen — it IS the player
+                            if (currentRoute != Routes.NOW_PLAYING) {
                             MiniPlayer(
                                 song = currentSong,
                                 isPlaying = isPlaying,
@@ -115,10 +118,14 @@ class MainActivity : ComponentActivity() {
                                             ?.let { musicViewModel.toggleFavourite(it) }
                                     }
                                 },
-                                onClick = { /* TODO: expand to full player screen */ }
+                                onClick = { navController.navigate(Routes.NOW_PLAYING) }
                             )
+                            }
                             // Only show bottom nav on main screens
-                            if (currentRoute == Routes.HOME || currentRoute == Routes.PLAYLISTS) {
+                            if (currentRoute == Routes.HOME ||
+                                currentRoute == Routes.PLAYLISTS ||
+                                currentRoute == Routes.ARTISTS
+                            ) {
                                 NavigationBar {
                                 NavigationBarItem(
                                     icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
@@ -128,6 +135,18 @@ class MainActivity : ComponentActivity() {
                                         if (currentRoute != Routes.HOME) {
                                             navController.navigate(Routes.HOME) {
                                                 popUpTo(Routes.HOME) { inclusive = true }
+                                            }
+                                        }
+                                    }
+                                )
+                                NavigationBarItem(
+                                    icon = { Icon(Icons.Default.Person, contentDescription = "Artists") },
+                                    label = { Text("Artists") },
+                                    selected = currentRoute == Routes.ARTISTS,
+                                    onClick = {
+                                        if (currentRoute != Routes.ARTISTS) {
+                                            navController.navigate(Routes.ARTISTS) {
+                                                popUpTo(Routes.HOME)
                                             }
                                         }
                                     }

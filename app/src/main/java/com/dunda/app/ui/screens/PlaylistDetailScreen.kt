@@ -61,7 +61,8 @@ fun PlaylistDetailScreen(
     playlistId: Long,
     musicViewModel: MusicViewModel,
     playerViewModel: PlayerViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenNowPlaying: () -> Unit = {}
 ) {
     val isVirtual = playlistId < 0
 
@@ -202,6 +203,7 @@ fun PlaylistDetailScreen(
                         playCount = playCounts[song.id] ?: 0,
                         onClick = {
                             playerViewModel.playSong(song, displayedSongs)
+                            onOpenNowPlaying()
                         },
                         // Only real playlists have removable membership
                         onRemoveFromPlaylist = if (!isVirtual) {

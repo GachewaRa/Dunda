@@ -56,7 +56,8 @@ fun HomeScreen(
     musicViewModel: MusicViewModel,
     playerViewModel: PlayerViewModel,
     onSettingsClick: () -> Unit = {},
-    onStatsClick: () -> Unit = {}
+    onStatsClick: () -> Unit = {},
+    onOpenNowPlaying: () -> Unit = {}
 ) {
     val songs by musicViewModel.songs.collectAsState()
     val sortMode by musicViewModel.sortMode.collectAsState()
@@ -74,6 +75,7 @@ fun HomeScreen(
     val selectionMode = selectedIds.isNotEmpty()
     var showAddToPlaylistDialog by remember { mutableStateOf(false) }
     var showNewPlaylistDialog by remember { mutableStateOf(false) }
+    var songToEdit by remember { mutableStateOf<Song?>(null) }
 
     BackHandler(enabled = selectionMode) { selectedIds = emptySet() }
 
@@ -237,17 +239,56 @@ fun HomeScreen(
                             } else {
                                 // Queue is what's on screen: search results included
                                 playerViewModel.playSong(song, visibleSongs)
+                                onOpenNowPlaying()
                             }
                         },
                         onLongClick = { selectedIds = selectedIds + song.id },
                         onAddToPlaylist = { playlistId ->
                             musicViewModel.addSongToPlaylist(playlistId, song.id)
                         },
-                        onToggleFavourite = { musicViewModel.toggleFavourite(song) }
+                        onToggleFavourite = { musicViewModel.toggleFavourite(song) },
+                        onEditInfo = { songToEdit = song }
                     )
                 }
             }
         }
+    }
+
+    songToEdit?.let { song ->
+        var title by remember(song.id) { mutableStateOf(song.title) }
+        var artist by remember(song.id) { mutableStateOf(song.artist) }
+        AlertDialog(
+            onDismissRequest = { songToEdit = null },
+            title = { Text("Edit song info") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text("Title") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = artist,
+                        onValueChange = { artist = it },
+                        label = { Text("Artist") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        musicViewModel.setSongInfo(song.id, title, artist)
+                        songToEdit = null
+                    },
+                    enabled = title.isNotBlank()
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { songToEdit = null }) { Text("Cancel") }
+            }
+        )
     }
 
     if (showAddToPlaylistDialog) {

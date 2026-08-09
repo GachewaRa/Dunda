@@ -94,6 +94,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.setFavourite(song.id, !song.isFavourite) }
     }
 
+    fun setSongInfo(songId: Long, title: String, artist: String) {
+        viewModelScope.launch { repository.setSongInfo(songId, title, artist) }
+    }
+
     // Statistics (docs/FEATURES.md §6)
     fun statsInRange(from: Long, to: Long): Flow<List<SongPlayStats>> =
         repository.statsInRange(from, to)

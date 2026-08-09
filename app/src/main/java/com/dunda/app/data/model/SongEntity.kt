@@ -23,12 +23,17 @@ data class SongEntity(
     val bpm: Int? = null,
     val isFavourite: Boolean = false,
     val isPresent: Boolean = true,
+    // User/cleanup metadata overrides. Null = use the scanned value. Kept
+    // across rescans (see SongDao.sync) so tag cleanup survives; the raw
+    // MediaStore values stay in title/artist and are always recoverable.
+    val customTitle: String? = null,
+    val customArtist: String? = null,
 )
 
 fun SongEntity.toSong(): Song = Song(
     id = id,
-    title = title,
-    artist = artist,
+    title = customTitle ?: title,
+    artist = customArtist ?: artist,
     album = album,
     duration = duration,
     uri = Uri.parse(uri),
