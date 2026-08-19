@@ -80,6 +80,7 @@ fun DundaNavGraph(
         composable(Routes.SETTINGS) {
             SettingsScreen(
                 playerViewModel = playerViewModel,
+                musicViewModel = musicViewModel,
                 onBack = { navController.popBackStack() }
             )
         }

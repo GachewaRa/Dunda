@@ -1,6 +1,7 @@
 package com.dunda.app.data.local
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -17,7 +18,10 @@ class SettingsStore(private val context: Context) {
     companion object {
         private val KEY_CROSSFADE_MS = longPreferencesKey("crossfade_ms")
         private val KEY_LIBRARY_SORT = stringPreferencesKey("library_sort_mode")
+        private val KEY_MIN_DURATION_MS = longPreferencesKey("min_duration_ms")
+        private val KEY_EXCLUDE_NON_MUSIC = booleanPreferencesKey("exclude_non_music")
         const val DEFAULT_CROSSFADE_MS = 10_000L
+        const val DEFAULT_MIN_DURATION_MS = 110_000L   // 1:50
     }
 
     val crossfadeMs: Flow<Long> = context.dataStore.data
@@ -32,5 +36,21 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setLibrarySortMode(mode: SortMode) {
         context.dataStore.edit { it[KEY_LIBRARY_SORT] = mode.name }
+    }
+
+    /** Songs shorter than this are excluded from the library. 0 = no minimum. */
+    val minDurationMs: Flow<Long> = context.dataStore.data
+        .map { it[KEY_MIN_DURATION_MS] ?: DEFAULT_MIN_DURATION_MS }
+
+    /** Hide files that look like voice notes / recordings, not music. */
+    val excludeNonMusic: Flow<Boolean> = context.dataStore.data
+        .map { it[KEY_EXCLUDE_NON_MUSIC] ?: true }
+
+    suspend fun setMinDurationMs(value: Long) {
+        context.dataStore.edit { it[KEY_MIN_DURATION_MS] = value }
+    }
+
+    suspend fun setExcludeNonMusic(value: Boolean) {
+        context.dataStore.edit { it[KEY_EXCLUDE_NON_MUSIC] = value }
     }
 }

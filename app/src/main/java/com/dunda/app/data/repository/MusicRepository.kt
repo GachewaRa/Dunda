@@ -12,6 +12,7 @@ import com.dunda.app.data.model.toEntity
 import com.dunda.app.data.model.toSong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
@@ -38,7 +39,11 @@ class MusicRepository(context: Context) {
     /** Scan MediaStore and sync into the cache, preserving per-song user data. */
     suspend fun refreshLibrary() {
         withContext(Dispatchers.IO) {
-            songDao.sync(mediaScanner.scanMusic().map { it.toEntity() })
+            val minDuration = settings.minDurationMs.first()
+            val excludeNonMusic = settings.excludeNonMusic.first()
+            songDao.sync(
+                mediaScanner.scanMusic(minDuration, excludeNonMusic).map { it.toEntity() }
+            )
         }
     }
 

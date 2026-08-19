@@ -3,6 +3,7 @@ package com.dunda.app.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.dunda.app.data.local.SettingsStore
 import com.dunda.app.data.local.SongPlayStats
 import com.dunda.app.data.model.Playlist
 import com.dunda.app.data.model.Song
@@ -12,6 +13,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -41,6 +44,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val playlistSongCounts: StateFlow<Map<Long, Int>> = repository.playlistSongCounts
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
 
+    val minDurationMs: StateFlow<Long> = repository.settings.minDurationMs
+        .stateIn(viewModelScope, SharingStarted.Eagerly, SettingsStore.DEFAULT_MIN_DURATION_MS)
+
+    val excludeNonMusic: StateFlow<Boolean> = repository.settings.excludeNonMusic
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     init {
         loadSongs()
         viewModelScope.launch {
@@ -48,6 +57,24 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 _sortMode.value = if (saved == SortMode.CUSTOM) SortMode.TITLE_ASC else saved
             }
         }
+        // Library filters changed → rescan so exclusions apply immediately
+        // (drop the initial emission; init already scanned once).
+        viewModelScope.launch {
+            combine(
+                repository.settings.minDurationMs,
+                repository.settings.excludeNonMusic
+            ) { min, excl -> min to excl }
+                .drop(1)
+                .collect { loadSongs() }
+        }
+    }
+
+    fun setMinDurationMs(value: Long) {
+        viewModelScope.launch { repository.settings.setMinDurationMs(value) }
+    }
+
+    fun setExcludeNonMusic(value: Boolean) {
+        viewModelScope.launch { repository.settings.setExcludeNonMusic(value) }
     }
 
     fun loadSongs() {

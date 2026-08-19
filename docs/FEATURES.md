@@ -40,6 +40,8 @@ statistics.
 | 25 | One-time library cleanup: 1,254 songs assigned artist+title, 243 title-cleaned (of 1,578); junk files skipped. Applied 2026-08-09 via adb into overrides | ✅ Done | scripts in session scratchpad; data lives in `songs.customTitle/customArtist` |
 | 26 | Now Playing screen: album art (Coil), song details incl. play count, seek bar, full controls (shuffle/repeat/solo/favourite). Opens on song tap and mini-player tap | ✅ Done | `ui/screens/NowPlayingScreen.kt`, route `now_playing` |
 | 27 | Artists browsing: Artists tab (song/play counts per artist), artist detail page with shuffle-play; artist name in Now Playing is clickable | ✅ Done | `ArtistsScreen.kt`, `ArtistDetailScreen.kt`, routes `artists`, `artist/{name}` |
+| 28 | Crossfade handover: incoming song becomes "current" at fade START (UI/lock screen/seek/next all follow it) | ✅ Done | `CrossfadePlayer.onCrossfadeStarted`, `displayPlayer()` |
+| 29 | Library filters: minimum song length (default 1:50) + hide voice notes/recordings by file signature; both in Settings, auto-rescan on change; excluded files keep history (isPresent=0) | ✅ Done | `MediaScanner`, `SettingsStore`, `SettingsScreen` |
 
 > Statuses reflect code + JVM unit tests (`app/src/test/`). On-device verification
 > (crossfade feel, notification controls) is tracked separately by the user.

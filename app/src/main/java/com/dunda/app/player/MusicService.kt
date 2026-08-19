@@ -76,11 +76,22 @@ class MusicService : MediaSessionService() {
         crossfadePlayer = CrossfadePlayer(this)
         crossfadePlayer.initialize()
 
-        // Crossfade completed: the preloaded item is now audible. Commit the
-        // same transition QueueManager promised via peekNext.
-        crossfadePlayer.setOnSongTransition {
+        // Crossfade began: the incoming song is audible, so it IS the current
+        // song from the user's perspective — commit the queue transition now.
+        // (Skip preloading: the "inactive" player is the audible incoming one;
+        // the next song is preloaded when the fade finishes and frees a player.)
+        crossfadePlayer.setOnCrossfadeStarted { incoming ->
             queueManager.advanceOnCompletion()
-            onCurrentSongStarted()
+            setSessionPlayer(incoming)
+            onCurrentSongStarted(preloadNext = false)
+        }
+
+        // Crossfade completed: transition was committed at fade start; just
+        // preload the following song into the now-free player.
+        crossfadePlayer.setOnSongTransition {
+            queueNextForCrossfade()
+            persistState()
+            notifyStateChanged()
         }
 
         // Song ended with nothing preloaded (no crossfade happened).
@@ -100,11 +111,11 @@ class MusicService : MediaSessionService() {
 
         // The audible ExoPlayer changes on every crossfade; the session must
         // follow it or lock screen / headphone controls act on the silent one.
-        crossfadePlayer.setOnActivePlayerChanged { active ->
-            mediaSession?.setPlayer(sessionPlayerFor(active))
-        }
+        // (Normally already done at fade start; this is the no-fade fallback.)
+        crossfadePlayer.setOnActivePlayerChanged { active -> setSessionPlayer(active) }
 
         val player = crossfadePlayer.getActivePlayer() ?: ExoPlayer.Builder(this).build()
+        sessionPlayerBacking = player
         mediaSession = MediaSession.Builder(this, sessionPlayerFor(player))
             .setCallback(sessionCallback)
             .build()
@@ -323,12 +334,22 @@ class MusicService : MediaSessionService() {
     }
 
     /** Common path for every audible song start: new instance + preload + persist. */
-    private fun onCurrentSongStarted() {
+    private fun onCurrentSongStarted(preloadNext: Boolean = true) {
         getCurrentSong()?.let { playTracker.startInstance(it.id, it.duration) }
-        queueNextForCrossfade()
+        if (preloadNext) queueNextForCrossfade()
         updateCustomLayout()   // favourite button reflects the new song
         persistState()
         notifyStateChanged()
+    }
+
+    // The ExoPlayer instance the session currently wraps; setPlayer only on
+    // real changes so the media notification doesn't rebuild needlessly.
+    private var sessionPlayerBacking: ExoPlayer? = null
+
+    private fun setSessionPlayer(player: ExoPlayer) {
+        if (sessionPlayerBacking === player) return
+        sessionPlayerBacking = player
+        mediaSession?.setPlayer(sessionPlayerFor(player))
     }
 
     // ---- queue / playback API ----

@@ -6,6 +6,9 @@ import android.os.Looper
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.mp3.Mp3Extractor
 
 /**
  * Manages crossfade transitions between two ExoPlayer instances.
@@ -40,10 +43,27 @@ class CrossfadePlayer(private val context: Context) {
     private var onPlaybackComplete: (() -> Unit)? = null
     private var onPlaybackChanged: (() -> Unit)? = null
     private var onActivePlayerChanged: ((ExoPlayer) -> Unit)? = null
+    private var onCrossfadeStarted: ((ExoPlayer) -> Unit)? = null
+
+    /**
+     * The player whose song the user considers "current". From the moment a
+     * crossfade starts, that's the incoming (fading-in) player — the UI,
+     * session, and seek bar should all follow it, not the outgoing tail.
+     */
+    private fun displayPlayer(): ExoPlayer? =
+        if (isCrossfading) inactivePlayer else activePlayer
 
     fun initialize() {
-        playerA = ExoPlayer.Builder(context).build()
-        playerB = ExoPlayer.Builder(context).build()
+        // Index-based MP3 seeking: many downloaded files are VBR without a
+        // Xing header, and the default first-frame bitrate estimate reports
+        // absurd durations (3-min song shown as ~30 min) and broken seeking.
+        // Building an index gives true duration + sample-accurate seeks.
+        val extractorsFactory = DefaultExtractorsFactory()
+            .setMp3ExtractorFlags(Mp3Extractor.FLAG_ENABLE_INDEX_SEEKING)
+        val mediaSourceFactory = DefaultMediaSourceFactory(context, extractorsFactory)
+
+        playerA = ExoPlayer.Builder(context).setMediaSourceFactory(mediaSourceFactory).build()
+        playerB = ExoPlayer.Builder(context).setMediaSourceFactory(mediaSourceFactory).build()
         activePlayer = playerA
         inactivePlayer = playerB
 
@@ -81,8 +101,17 @@ class CrossfadePlayer(private val context: Context) {
         onActivePlayerChanged = callback
     }
 
+    /**
+     * Fired the moment a crossfade begins — the incoming player (argument) is
+     * audible from here on and should be treated as the current song.
+     */
+    fun setOnCrossfadeStarted(callback: (ExoPlayer) -> Unit) {
+        onCrossfadeStarted = callback
+    }
+
     fun play(mediaItem: MediaItem) {
         stopCrossfade()
+        crossfadeArmTicks = 0
         activePlayer?.apply {
             setMediaItem(mediaItem)
             prepare()
@@ -124,14 +153,14 @@ class CrossfadePlayer(private val context: Context) {
     }
 
     fun seekTo(positionMs: Long) {
-        activePlayer?.seekTo(positionMs)
+        displayPlayer()?.seekTo(positionMs)
     }
 
-    fun isPlaying(): Boolean = activePlayer?.isPlaying == true
+    fun isPlaying(): Boolean = displayPlayer()?.isPlaying == true
 
-    fun currentPosition(): Long = activePlayer?.currentPosition ?: 0L
+    fun currentPosition(): Long = displayPlayer()?.currentPosition ?: 0L
 
-    fun duration(): Long = activePlayer?.duration ?: 0L
+    fun duration(): Long = displayPlayer()?.duration ?: 0L
 
     /**
      * Queue the next song for crossfade. Call this when you know what's next.
@@ -159,6 +188,15 @@ class CrossfadePlayer(private val context: Context) {
         }
     }
 
+    // Consecutive monitor ticks the crossfade condition has held. VBR files
+    // report an unstable duration while their seek index builds, which can
+    // make "remaining time" dip spuriously low for a moment — a single-tick
+    // trigger then starts a phantom crossfade long before the song's real end.
+    private var crossfadeArmTicks = 0
+    private companion object {
+        const val ARM_TICKS_REQUIRED = 3   // condition must hold ~300ms
+    }
+
     private val monitorRunnable = object : Runnable {
         override fun run() {
             val player = activePlayer ?: return
@@ -168,10 +206,22 @@ class CrossfadePlayer(private val context: Context) {
             if (duration > 0 && position > 0) {
                 val remaining = duration - position
 
-                if (remaining <= crossfadeDurationMs && !isCrossfading) {
-                    // Check if next song is queued
-                    if (inactivePlayer?.mediaItemCount ?: 0 > 0) {
-                        startCrossfade()
+                if (!isCrossfading) {
+                    val eligible = crossfadeDurationMs > 0 &&
+                        remaining in 1..crossfadeDurationMs &&
+                        // Never fade during a song's own opening stretch:
+                        // a genuine end-approach implies we've played past
+                        // at least one fade-length of audio.
+                        position > crossfadeDurationMs &&
+                        player.isPlaying &&
+                        (inactivePlayer?.mediaItemCount ?: 0) > 0
+                    if (eligible) {
+                        if (++crossfadeArmTicks >= ARM_TICKS_REQUIRED) {
+                            crossfadeArmTicks = 0
+                            startCrossfade()
+                        }
+                    } else {
+                        crossfadeArmTicks = 0
                     }
                 }
 
@@ -209,6 +259,7 @@ class CrossfadePlayer(private val context: Context) {
             volume = 0f
             playWhenReady = true
         }
+        inactivePlayer?.let { onCrossfadeStarted?.invoke(it) }
     }
 
     private fun updateCrossfadeVolumes() {
