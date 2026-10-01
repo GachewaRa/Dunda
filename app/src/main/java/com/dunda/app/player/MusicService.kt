@@ -1,5 +1,6 @@
 package com.dunda.app.player
 
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -116,8 +117,18 @@ class MusicService : MediaSessionService() {
 
         val player = crossfadePlayer.getActivePlayer() ?: ExoPlayer.Builder(this).build()
         sessionPlayerBacking = player
+        // Tapping the media notification / lock screen card opens the app.
+        val openAppIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, com.dunda.app.MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
         mediaSession = MediaSession.Builder(this, sessionPlayerFor(player))
             .setCallback(sessionCallback)
+            .setSessionActivity(openAppIntent)
             .build()
         // The service only manages a session's media notification once the
         // session is added to it. Normally a connecting MediaController does
@@ -328,7 +339,17 @@ class MusicService : MediaSessionService() {
     private val trackerHandler = Handler(Looper.getMainLooper())
     private val trackerRunnable = object : Runnable {
         override fun run() {
-            if (crossfadePlayer.isPlaying()) playTracker.onProgress(1000)
+            if (crossfadePlayer.isPlaying()) {
+                // Self-heal: if any path started audio without registering a
+                // tracker instance, register it now rather than counting into
+                // the void (activeSongId == -1 silently drops progress).
+                getCurrentSong()?.let { song ->
+                    if (playTracker.activeSongId != song.id) {
+                        playTracker.startInstance(song.id, song.duration)
+                    }
+                }
+                playTracker.onProgress(1000)
+            }
             trackerHandler.postDelayed(this, 1000)
         }
     }
@@ -502,6 +523,8 @@ class MusicService : MediaSessionService() {
     private fun persistState() {
         val snap = queueManager.snapshot()
         val queueIds = queueManager.queue.joinToString(",") { it.id.toString() }
+        // Tracker state is only meaningful if it belongs to the current song
+        val trackerMatches = getCurrentSong()?.id == playTracker.activeSongId
         val state = QueueState(
             queueIds = queueIds,
             shuffleOrder = snap.order.joinToString(","),
@@ -511,6 +534,8 @@ class MusicService : MediaSessionService() {
             shuffleEnabled = snap.shuffleEnabled,
             repeatMode = snap.repeatMode.name,
             soloMode = snap.soloMode,
+            trackerAccumulatedMs = if (trackerMatches) playTracker.accumulatedMs else 0,
+            trackerQualified = trackerMatches && playTracker.isQualified,
         )
         persistScope.launch { database.queueStateDao().save(state) }
     }
@@ -544,7 +569,12 @@ class MusicService : MediaSessionService() {
                 // Restore paused at the saved song/position; user resumes explicitly.
                 getCurrentSong()?.let { song ->
                     crossfadePlayer.prepareAt(buildMediaItem(song), state.positionMs)
-                    playTracker.startInstance(song.id, song.duration)
+                    // Carry partial listening time across process death so a
+                    // paused-then-killed session still logs its play honestly.
+                    playTracker.restoreInstance(
+                        song.id, song.duration,
+                        state.trackerAccumulatedMs, state.trackerQualified,
+                    )
                     queueNextForCrossfade()
                 }
                 notifyStateChanged()
@@ -590,8 +620,11 @@ class MusicService : MediaSessionService() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val player = mediaSession?.player
-        if (player != null && !player.playWhenReady) {
+        // Keep the service (and its notification) alive while a song is
+        // loaded, even if it's paused — stopping here was one reason the
+        // player vanished right after pausing. Only shut down when there's
+        // nothing to resume.
+        if (getCurrentSong() == null) {
             stopSelf()
         }
     }

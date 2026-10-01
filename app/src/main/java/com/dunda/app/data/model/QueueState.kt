@@ -19,4 +19,8 @@ data class QueueState(
     val shuffleEnabled: Boolean,
     val repeatMode: String,      // RepeatMode enum name
     val soloMode: Boolean,
+    // Play-tracker state for the current song, so partial listening time
+    // survives process death (see PlayTracker.restoreInstance).
+    val trackerAccumulatedMs: Long = 0,
+    val trackerQualified: Boolean = false,
 )

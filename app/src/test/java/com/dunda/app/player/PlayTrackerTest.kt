@@ -78,6 +78,25 @@ class PlayTrackerTest {
     }
 
     @Test
+    fun `restored instance continues counting from persisted time`() {
+        // Pause at 16s, process killed, restore: 14 more seconds must qualify.
+        val r = Recorder()
+        r.tracker.restoreInstance(songId = 9, durationMs = 180_000, accumulatedMs = 16_000, qualified = false)
+        r.tracker.onProgress(13_000)
+        assertEquals(0, r.plays.size)
+        r.tracker.onProgress(1_000)   // 30s cumulative
+        assertEquals(listOf(9L), r.plays.map { it.first })
+    }
+
+    @Test
+    fun `restored already-qualified instance never double-logs`() {
+        val r = Recorder()
+        r.tracker.restoreInstance(songId = 10, durationMs = 180_000, accumulatedMs = 45_000, qualified = true)
+        r.tracker.onProgress(120_000)
+        assertEquals(0, r.plays.size)
+    }
+
+    @Test
     fun `negative or zero deltas are ignored`() {
         val r = Recorder()
         r.tracker.startInstance(songId = 8, durationMs = 100_000)

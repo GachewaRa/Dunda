@@ -1,5 +1,10 @@
 package com.dunda.app.ui.screens
 
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,7 +27,11 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.dunda.app.viewmodel.MusicViewModel
@@ -151,6 +160,50 @@ fun SettingsScreen(
                 Switch(
                     checked = excludeNonMusic,
                     onCheckedChange = { musicViewModel.setExcludeNonMusic(it) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ---- Background reliability ----
+            val context = LocalContext.current
+            val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            var exempt by remember {
+                mutableStateOf(powerManager.isIgnoringBatteryOptimizations(context.packageName))
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Keep player alive in background",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = if (exempt) {
+                            "Battery optimization is off for Dunda — the paused player should stay available."
+                        } else {
+                            "Your phone may kill the paused player to save battery, making the notification disappear. Tap to exempt Dunda from battery optimization."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                }
+                Switch(
+                    checked = exempt,
+                    onCheckedChange = {
+                        if (!exempt) {
+                            @SuppressLint("BatteryLife")
+                            val intent = Intent(
+                                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                            context.startActivity(intent)
+                        }
+                        // Re-check on return; the system dialog decides the truth
+                        exempt = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+                    }
                 )
             }
         }

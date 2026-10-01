@@ -42,6 +42,8 @@ statistics.
 | 27 | Artists browsing: Artists tab (song/play counts per artist), artist detail page with shuffle-play; artist name in Now Playing is clickable | ✅ Done | `ArtistsScreen.kt`, `ArtistDetailScreen.kt`, routes `artists`, `artist/{name}` |
 | 28 | Crossfade handover: incoming song becomes "current" at fade START (UI/lock screen/seek/next all follow it) | ✅ Done | `CrossfadePlayer.onCrossfadeStarted`, `displayPlayer()` |
 | 29 | Library filters: minimum song length (default 1:50) + hide voice notes/recordings by file signature; both in Settings, auto-rescan on change; excluded files keep history (isPresent=0) | ✅ Done | `MediaScanner`, `SettingsStore`, `SettingsScreen` |
+| 30 | Play-tracker persistence (Room v4): partial listening time survives process death; self-healing tick guard | ✅ Done | `PlayTracker.restoreInstance`, `queue_state.trackerAccumulatedMs` |
+| 31 | Notification tap opens the app (session activity); paused service survives app-swipe; Settings toggle to exempt from battery optimization | ✅ Done | `MusicService.setSessionActivity`, `onTaskRemoved`, `SettingsScreen` |
 
 > Statuses reflect code + JVM unit tests (`app/src/test/`). On-device verification
 > (crossfade feel, notification controls) is tracked separately by the user.
