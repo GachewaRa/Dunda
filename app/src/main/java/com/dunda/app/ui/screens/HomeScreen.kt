@@ -3,6 +3,7 @@ package com.dunda.app.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Close
@@ -42,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dunda.app.data.model.Playlist
 import com.dunda.app.data.model.Song
@@ -78,6 +81,10 @@ fun HomeScreen(
     var songToEdit by remember { mutableStateOf<Song?>(null) }
 
     BackHandler(enabled = selectionMode) { selectedIds = emptySet() }
+    BackHandler(enabled = !selectionMode && searchActive) {
+        searchActive = false
+        searchQuery = ""
+    }
 
     val sortedSongs = musicViewModel.sortSongs(songs, sortMode)
     val visibleSongs = if (searchActive && searchQuery.isNotBlank()) {
@@ -114,42 +121,69 @@ fun HomeScreen(
                     containerColor = MaterialTheme.colorScheme.background
                 )
             )
-        } else {
-        TopAppBar(
-            title = {
-                if (searchActive) {
+        } else if (searchActive) {
+            // Search takes over the whole bar: full-width field, back arrow,
+            // in-field clear — no competing action icons squeezing it.
+            TopAppBar(
+                title = {
                     val focusRequester = remember { FocusRequester() }
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        placeholder = { Text("Search songs, artists, albums") },
+                        placeholder = {
+                            Text(
+                                "Search songs, artists, albums",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
                         singleLine = true,
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear")
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(24.dp),
                         modifier = Modifier
                             .fillMaxWidth()
+                            .padding(end = 8.dp)
                             .focusRequester(focusRequester)
                     )
                     LaunchedEffect(Unit) { focusRequester.requestFocus() }
-                } else {
-                    Column {
-                        Text("Dunda", style = MaterialTheme.typography.headlineMedium)
-                        Text(
-                            "${songs.size} songs",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                },
+                navigationIcon = {
+                    IconButton(onClick = {
+                        searchActive = false
+                        searchQuery = ""
+                    }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Close search"
                         )
                     }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        } else {
+        TopAppBar(
+            title = {
+                Column {
+                    Text("Dunda", style = MaterialTheme.typography.headlineMedium)
+                    Text(
+                        "${songs.size} songs",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
                 }
             },
             actions = {
                 // Search
-                IconButton(onClick = {
-                    searchActive = !searchActive
-                    if (!searchActive) searchQuery = ""
-                }) {
-                    Icon(
-                        if (searchActive) Icons.Default.Close else Icons.Default.Search,
-                        contentDescription = if (searchActive) "Close search" else "Search"
-                    )
+                IconButton(onClick = { searchActive = true }) {
+                    Icon(Icons.Default.Search, contentDescription = "Search")
                 }
                 // Sort button
                 IconButton(onClick = { showSortMenu = true }) {

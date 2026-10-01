@@ -118,6 +118,12 @@ class CrossfadePlayer(private val context: Context) {
             volume = 1f * volumeMultiplier
             playWhenReady = true
         }
+        // The audible player is (again) the active one. Crucial when this
+        // interrupts a crossfade: the session was following the incoming
+        // player, which stopCrossfade just killed — without this, the lock
+        // screen keeps watching that idle player, later shows whatever gets
+        // preloaded into it (the NEXT song), and its buttons control nothing.
+        activePlayer?.let { onActivePlayerChanged?.invoke(it) }
         startMonitoring()
     }
 
@@ -134,6 +140,7 @@ class CrossfadePlayer(private val context: Context) {
             volume = 1f
             playWhenReady = false
         }
+        activePlayer?.let { onActivePlayerChanged?.invoke(it) }
     }
 
     fun pause() {
