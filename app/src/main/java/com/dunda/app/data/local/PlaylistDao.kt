@@ -24,6 +24,15 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlists WHERE id = :playlistId")
     suspend fun getPlaylistById(playlistId: Long): Playlist?
 
+    @Query("SELECT * FROM playlists")
+    suspend fun getAllPlaylistsOnce(): List<Playlist>
+
+    @Query("SELECT * FROM playlist_songs WHERE playlistId = :playlistId ORDER BY position ASC")
+    suspend fun getPlaylistSongsOnce(playlistId: Long): List<PlaylistSong>
+
+    @Query("SELECT * FROM playlists WHERE name = :name LIMIT 1")
+    suspend fun getPlaylistByName(name: String): Playlist?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylist(playlist: Playlist): Long
 

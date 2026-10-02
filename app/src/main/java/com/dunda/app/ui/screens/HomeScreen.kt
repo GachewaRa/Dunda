@@ -193,7 +193,9 @@ fun HomeScreen(
                     expanded = showSortMenu,
                     onDismissRequest = { showSortMenu = false }
                 ) {
-                    SortMode.entries.filter { it != SortMode.CUSTOM }.forEach { mode ->
+                    SortMode.entries
+                        .filter { it != SortMode.CUSTOM && it != SortMode.BPM }
+                        .forEach { mode ->
                         DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -281,7 +283,9 @@ fun HomeScreen(
                             musicViewModel.addSongToPlaylist(playlistId, song.id)
                         },
                         onToggleFavourite = { musicViewModel.toggleFavourite(song) },
-                        onEditInfo = { songToEdit = song }
+                        onEditInfo = { songToEdit = song },
+                        onPlayNext = { playerViewModel.playNext(song) },
+                        onAddToQueue = { playerViewModel.addToQueue(song) }
                     )
                 }
             }

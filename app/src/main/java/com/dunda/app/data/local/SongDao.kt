@@ -32,6 +32,18 @@ interface SongDao {
     @Query("UPDATE songs SET customTitle = :title, customArtist = :artist WHERE id = :songId")
     suspend fun setCustomMetadata(songId: Long, title: String?, artist: String?)
 
+    @Query(
+        """
+        UPDATE songs SET
+            customTitle = COALESCE(:title, customTitle),
+            customArtist = COALESCE(:artist, customArtist),
+            isFavourite = isFavourite OR :favourite,
+            bpm = COALESCE(:bpm, bpm)
+        WHERE id = :songId
+        """
+    )
+    suspend fun applyBackupUserData(songId: Long, title: String?, artist: String?, favourite: Boolean, bpm: Int?)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(songs: List<SongEntity>)
 

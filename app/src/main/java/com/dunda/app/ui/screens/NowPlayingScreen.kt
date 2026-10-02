@@ -13,7 +13,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -28,6 +31,7 @@ import androidx.compose.material.icons.filled.RepeatOneOn
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -36,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -47,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,7 +73,8 @@ fun NowPlayingScreen(
     musicViewModel: MusicViewModel,
     playerViewModel: PlayerViewModel,
     onBack: () -> Unit,
-    onArtistClick: (String) -> Unit = {}
+    onArtistClick: (String) -> Unit = {},
+    onOpenQueue: () -> Unit = {}
 ) {
     val currentSong by playerViewModel.currentSong.collectAsState()
     val isPlaying by playerViewModel.isPlaying.collectAsState()
@@ -86,6 +93,9 @@ fun NowPlayingScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        val sleepTimer by playerViewModel.sleepTimer.collectAsState()
+        var showSleepDialog by remember { mutableStateOf(false) }
+
         TopAppBar(
             title = { Text("Now Playing", style = MaterialTheme.typography.titleMedium) },
             navigationIcon = {
@@ -93,10 +103,69 @@ fun NowPlayingScreen(
                     Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Close")
                 }
             },
+            actions = {
+                IconButton(onClick = { showSleepDialog = true }) {
+                    Icon(
+                        Icons.Default.Bedtime,
+                        contentDescription = "Sleep timer",
+                        tint = if (sleepTimer != 0L) MaterialTheme.colorScheme.primary
+                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                }
+                IconButton(onClick = onOpenQueue) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = "Queue"
+                    )
+                }
+            },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = MaterialTheme.colorScheme.background
             )
         )
+
+        if (showSleepDialog) {
+            AlertDialog(
+                onDismissRequest = { showSleepDialog = false },
+                title = { Text("Sleep timer") },
+                text = {
+                    Column {
+                        if (sleepTimer > 0L) {
+                            val mins = ((sleepTimer - System.currentTimeMillis()) / 60_000).coerceAtLeast(0)
+                            Text(
+                                "Pausing in about $mins min",
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else if (sleepTimer == -1L) {
+                            Text(
+                                "Pausing at the end of this song",
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        listOf(15, 30, 45, 60).forEach { mins ->
+                            TextButton(onClick = {
+                                playerViewModel.setSleepTimer(mins)
+                                showSleepDialog = false
+                            }) { Text("$mins minutes") }
+                        }
+                        TextButton(onClick = {
+                            playerViewModel.setSleepAtEndOfSong()
+                            showSleepDialog = false
+                        }) { Text("End of current song") }
+                        if (sleepTimer != 0L) {
+                            TextButton(onClick = {
+                                playerViewModel.setSleepTimer(0)
+                                showSleepDialog = false
+                            }) { Text("Turn off", color = MaterialTheme.colorScheme.error) }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showSleepDialog = false }) { Text("Close") }
+                }
+            )
+        }
 
         if (song == null) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -116,14 +185,25 @@ fun NowPlayingScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Album art (falls back to a music-note tile)
+            // Album art (falls back to a music-note tile). Swipe left/right
+            // to skip to the next/previous song.
+            var dragTotal by remember { mutableStateOf(0f) }
             SubcomposeAsyncImage(
                 model = song.albumArtUri,
                 contentDescription = "Album art",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(280.dp)
-                    .clip(RoundedCornerShape(16.dp)),
+                    .clip(RoundedCornerShape(16.dp))
+                    .pointerInput(Unit) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { dragTotal = 0f },
+                            onDragEnd = {
+                                if (dragTotal < -120f) playerViewModel.skipNext()
+                                else if (dragTotal > 120f) playerViewModel.skipPrevious()
+                            }
+                        ) { _, dragAmount -> dragTotal += dragAmount }
+                    },
                 error = {
                     Box(
                         modifier = Modifier

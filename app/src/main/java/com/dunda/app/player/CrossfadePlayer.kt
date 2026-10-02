@@ -274,8 +274,14 @@ class CrossfadePlayer(private val context: Context) {
         val remaining = player.duration - player.currentPosition
         val progress = 1f - (remaining.toFloat() / crossfadeDurationMs.toFloat()).coerceIn(0f, 1f)
 
-        activePlayer?.volume = (1f - progress).coerceIn(0f, 1f) * volumeMultiplier
-        inactivePlayer?.volume = progress.coerceIn(0f, 1f) * volumeMultiplier
+        // Equal-power curves: linear fades dip in perceived loudness mid-fade
+        // (0.5 + 0.5 of amplitude is not 1.0 of power). cos²+sin²=1 keeps the
+        // combined energy constant through the whole transition.
+        val p = progress.coerceIn(0f, 1f)
+        val outGain = kotlin.math.cos(p * (Math.PI.toFloat() / 2f))
+        val inGain = kotlin.math.sin(p * (Math.PI.toFloat() / 2f))
+        activePlayer?.volume = outGain * volumeMultiplier
+        inactivePlayer?.volume = inGain * volumeMultiplier
     }
 
     private fun finishCrossfade() {

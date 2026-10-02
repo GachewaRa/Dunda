@@ -226,6 +226,51 @@ class QueueManagerTest {
     }
 
     @Test
+    fun `playNext inserts directly after the current song`() {
+        val qm = manager(songs(4), start = 1)
+        qm.playNext("bonus")
+        assertEquals(listOf("song1", "song2", "bonus", "song3", "song4"), qm.queue)
+        assertEquals("song2", qm.current)
+        assertEquals("bonus", (qm.advanceOnCompletion() as NextAction.Play).item)
+    }
+
+    @Test
+    fun `playNext under shuffle plays immediately after current`() {
+        val qm = manager(songs(6), shuffle = true, repeat = RepeatMode.ALL)
+        val first = qm.current!!
+        qm.playNext("bonus")
+        assertEquals("bonus", (qm.advanceOnCompletion() as NextAction.Play).item)
+        // The rest of the cycle still covers every other song exactly once
+        val rest = playThrough(qm, 5)
+        assertEquals(songs(6).toSet() - first, rest.toSet())
+        assertEquals(5, rest.distinct().size)
+    }
+
+    @Test
+    fun `move keeps the current song and linear order consistent`() {
+        val qm = manager(songs(5), start = 2)   // current = song3
+        assertTrue(qm.move(4, 0))               // song5 to front
+        assertEquals(listOf("song5", "song1", "song2", "song3", "song4"), qm.queue)
+        assertEquals("song3", qm.current)
+        assertEquals("song4", (qm.advanceOnCompletion() as NextAction.Play).item)
+    }
+
+    @Test
+    fun `move under shuffle preserves the listening order`() {
+        val qm = manager(songs(6), shuffle = true, repeat = RepeatMode.OFF)
+        val expected = mutableListOf<String>()
+        val probe = QueueManager<String>(Random(42L))
+        probe.setShuffle(true)
+        probe.setQueue(songs(6), 0)
+        probe.repeatMode = RepeatMode.OFF
+        expected += playThrough(probe, 5)
+
+        assertTrue(qm.move(5, 0))
+        val actual = playThrough(qm, 5)
+        assertEquals("reordering the visible queue must not change shuffle playback", expected, actual)
+    }
+
+    @Test
     fun `single song queue with repeat ALL keeps replaying`() {
         val qm = manager(songs(1), repeat = RepeatMode.ALL)
         val a = qm.advanceOnCompletion()

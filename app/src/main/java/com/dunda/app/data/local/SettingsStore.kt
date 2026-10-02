@@ -53,4 +53,11 @@ class SettingsStore(private val context: Context) {
     suspend fun setExcludeNonMusic(value: Boolean) {
         context.dataStore.edit { it[KEY_EXCLUDE_NON_MUSIC] = value }
     }
+
+    val lastBackupAt: Flow<Long> = context.dataStore.data
+        .map { it[longPreferencesKey("last_backup_at")] ?: 0L }
+
+    suspend fun setLastBackupAt(value: Long) {
+        context.dataStore.edit { it[longPreferencesKey("last_backup_at")] = value }
+    }
 }

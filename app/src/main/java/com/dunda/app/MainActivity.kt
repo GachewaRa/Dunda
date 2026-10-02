@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QueueMusic
@@ -124,7 +125,8 @@ class MainActivity : ComponentActivity() {
                             // Only show bottom nav on main screens
                             if (currentRoute == Routes.HOME ||
                                 currentRoute == Routes.PLAYLISTS ||
-                                currentRoute == Routes.ARTISTS
+                                currentRoute == Routes.ARTISTS ||
+                                currentRoute == Routes.ALBUMS
                             ) {
                                 NavigationBar {
                                 NavigationBarItem(
@@ -146,6 +148,18 @@ class MainActivity : ComponentActivity() {
                                     onClick = {
                                         if (currentRoute != Routes.ARTISTS) {
                                             navController.navigate(Routes.ARTISTS) {
+                                                popUpTo(Routes.HOME)
+                                            }
+                                        }
+                                    }
+                                )
+                                NavigationBarItem(
+                                    icon = { Icon(Icons.Default.Album, contentDescription = "Albums") },
+                                    label = { Text("Albums") },
+                                    selected = currentRoute == Routes.ALBUMS,
+                                    onClick = {
+                                        if (currentRoute != Routes.ALBUMS) {
+                                            navController.navigate(Routes.ALBUMS) {
                                                 popUpTo(Routes.HOME)
                                             }
                                         }

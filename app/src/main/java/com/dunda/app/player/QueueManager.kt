@@ -151,6 +151,45 @@ class QueueManager<T>(private val random: Random = Random.Default) {
         }
     }
 
+    /** Insert so the item plays immediately after the current song. */
+    fun playNext(item: T) {
+        pending = null
+        if (items.isEmpty() || currentIndex < 0) {
+            addToQueue(item)
+            return
+        }
+        val insertIndex = currentIndex + 1
+        items.add(insertIndex, item)
+        if (shuffleEnabled) {
+            for (i in order.indices) if (order[i] >= insertIndex) order[i] = order[i] + 1
+            order.add(cursor + 1, insertIndex)
+        }
+    }
+
+    /**
+     * Move a queue item between positions (queue-editing UI). Under shuffle
+     * the play order is the permutation, so only item indices are remapped —
+     * the listening order is unchanged, which is what shuffle users expect.
+     */
+    fun move(from: Int, to: Int): Boolean {
+        if (from !in items.indices || to !in items.indices || from == to) return false
+        pending = null
+        val item = items.removeAt(from)
+        items.add(to, item)
+
+        fun remap(i: Int): Int = when {
+            i == from -> to
+            from < to && i in (from + 1)..to -> i - 1
+            to < from && i in to until from -> i + 1
+            else -> i
+        }
+        currentIndex = remap(currentIndex)
+        if (shuffleEnabled) {
+            for (i in order.indices) order[i] = remap(order[i])
+        }
+        return true
+    }
+
     /**
      * Remove a queue position. Returns false for invalid index or an attempt
      * to remove the currently playing song (callers should skip first).

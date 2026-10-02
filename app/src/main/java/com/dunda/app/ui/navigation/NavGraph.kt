@@ -7,10 +7,13 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.dunda.app.ui.screens.AlbumDetailScreen
+import com.dunda.app.ui.screens.AlbumsScreen
 import com.dunda.app.ui.screens.ArtistDetailScreen
 import com.dunda.app.ui.screens.ArtistsScreen
 import com.dunda.app.ui.screens.HomeScreen
 import com.dunda.app.ui.screens.NowPlayingScreen
+import com.dunda.app.ui.screens.QueueScreen
 import com.dunda.app.ui.screens.PlaylistDetailScreen
 import com.dunda.app.ui.screens.PlaylistScreen
 import com.dunda.app.ui.screens.SettingsScreen
@@ -27,11 +30,16 @@ object Routes {
     const val NOW_PLAYING = "now_playing"
     const val ARTISTS = "artists"
     const val ARTIST_DETAIL = "artist/{artistName}"
+    const val ALBUMS = "albums"
+    const val ALBUM_DETAIL = "album/{albumName}"
+    const val QUEUE = "queue"
 
     fun playlistDetail(playlistId: Long) = "playlist/$playlistId"
 
     /** Artist names may contain any character — always travel encoded. */
     fun artistDetail(artistName: String) = "artist/${Uri.encode(artistName)}"
+
+    fun albumDetail(albumName: String) = "album/${Uri.encode(albumName)}"
 }
 
 @Composable
@@ -100,7 +108,39 @@ fun DundaNavGraph(
                 onBack = { navController.popBackStack() },
                 onArtistClick = { artist ->
                     navController.navigate(Routes.artistDetail(artist))
+                },
+                onOpenQueue = { navController.navigate(Routes.QUEUE) }
+            )
+        }
+
+        composable(Routes.QUEUE) {
+            QueueScreen(
+                playerViewModel = playerViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.ALBUMS) {
+            AlbumsScreen(
+                musicViewModel = musicViewModel,
+                onAlbumClick = { album ->
+                    navController.navigate(Routes.albumDetail(album))
                 }
+            )
+        }
+
+        composable(
+            route = Routes.ALBUM_DETAIL,
+            arguments = listOf(navArgument("albumName") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val albumName = backStackEntry.arguments?.getString("albumName")
+                ?: return@composable
+            AlbumDetailScreen(
+                albumName = albumName,
+                musicViewModel = musicViewModel,
+                playerViewModel = playerViewModel,
+                onBack = { navController.popBackStack() },
+                onOpenNowPlaying = { navController.navigate(Routes.NOW_PLAYING) }
             )
         }
 

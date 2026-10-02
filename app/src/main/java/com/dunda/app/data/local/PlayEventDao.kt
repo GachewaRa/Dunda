@@ -56,4 +56,7 @@ interface PlayEventDao {
 
     @Query("SELECT COUNT(id) FROM play_events WHERE songId = :songId")
     suspend fun totalPlays(songId: Long): Int
+
+    @Query("SELECT * FROM play_events")
+    suspend fun getAllOnce(): List<PlayEvent>
 }

@@ -17,6 +17,21 @@ android {
         versionName = "1.0.0"
     }
 
+    // Release signing: keystore + credentials live OUTSIDE the repo, in
+    // ~/.gradle/gradle.properties (DUNDA_KEYSTORE*). Builds without them
+    // still work — release just falls back to unsigned.
+    val keystorePath = findProperty("DUNDA_KEYSTORE") as String?
+    if (keystorePath != null && file(keystorePath).exists()) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = findProperty("DUNDA_KEYSTORE_PASSWORD") as String?
+                keyAlias = findProperty("DUNDA_KEY_ALIAS") as String?
+                keyPassword = findProperty("DUNDA_KEYSTORE_PASSWORD") as String?
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -24,6 +39,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 

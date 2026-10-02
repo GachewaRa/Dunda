@@ -97,9 +97,13 @@ class MusicService : MediaSessionService() {
 
         // Song ended with nothing preloaded (no crossfade happened).
         crossfadePlayer.setOnPlaybackComplete {
+            // "Sleep at end of song": advance the queue so resuming starts
+            // the next song, but load it paused instead of playing.
+            val sleepNow = consumeEndOfSongSleep()
             when (queueManager.advanceOnCompletion()) {
                 is QueueManager.NextAction.Play,
-                QueueManager.NextAction.RepeatCurrent -> playCurrentSong()
+                QueueManager.NextAction.RepeatCurrent ->
+                    if (sleepNow) prepareCurrentPaused() else playCurrentSong()
                 QueueManager.NextAction.Stop -> {
                     persistState()
                     notifyStateChanged()
@@ -414,6 +418,11 @@ class MusicService : MediaSessionService() {
      * end of queue) clears the slot so the song ends cleanly.
      */
     private fun queueNextForCrossfade() {
+        // Sleeping at end of song: let it end cleanly, no fade into the next
+        if (sleepAtMs == -1L) {
+            crossfadePlayer.clearNext()
+            return
+        }
         when (val next = queueManager.peekNext()) {
             is QueueManager.NextAction.Play ->
                 crossfadePlayer.queueNext(buildMediaItem(next.item))
@@ -422,6 +431,13 @@ class MusicService : MediaSessionService() {
             QueueManager.NextAction.Stop ->
                 crossfadePlayer.clearNext()
         }
+    }
+
+    /** Load the current song paused at its start (post-sleep resume point). */
+    private fun prepareCurrentPaused() {
+        val song = getCurrentSong() ?: return
+        crossfadePlayer.prepareAt(buildMediaItem(song), 0)
+        onCurrentSongStarted()
     }
 
     fun playPause() {
@@ -472,6 +488,69 @@ class MusicService : MediaSessionService() {
         queueNextForCrossfade()
         persistState()
         notifyStateChanged()
+    }
+
+    fun playNext(song: Song) {
+        queueManager.playNext(song)
+        queueNextForCrossfade()
+        persistState()
+        notifyStateChanged()
+    }
+
+    fun removeFromQueue(index: Int) {
+        if (queueManager.removeFromQueue(index)) {
+            queueNextForCrossfade()
+            persistState()
+            notifyStateChanged()
+        }
+    }
+
+    fun moveInQueue(from: Int, to: Int) {
+        if (queueManager.move(from, to)) {
+            queueNextForCrossfade()
+            persistState()
+            notifyStateChanged()
+        }
+    }
+
+    // ---- sleep timer ----
+
+    /** Epoch millis when playback will pause; 0 = off, -1 = end of song. */
+    private var sleepAtMs: Long = 0L
+    private val sleepHandler = Handler(Looper.getMainLooper())
+    private val sleepRunnable = Runnable {
+        sleepAtMs = 0
+        pausePlayback()
+    }
+
+    fun getSleepTimerState(): Long = sleepAtMs
+
+    fun setSleepTimer(minutes: Int) {
+        sleepHandler.removeCallbacks(sleepRunnable)
+        if (minutes <= 0) {
+            sleepAtMs = 0
+        } else {
+            sleepAtMs = System.currentTimeMillis() + minutes * 60_000L
+            sleepHandler.postDelayed(sleepRunnable, minutes * 60_000L)
+        }
+        queueNextForCrossfade()   // re-preload if end-of-song mode was cleared
+        notifyStateChanged()
+    }
+
+    /** Pause when the current song finishes instead of at a wall-clock time. */
+    fun setSleepAtEndOfSong() {
+        sleepHandler.removeCallbacks(sleepRunnable)
+        sleepAtMs = -1L
+        queueNextForCrossfade()   // drop the preloaded next song: end cleanly
+        notifyStateChanged()
+    }
+
+    private fun consumeEndOfSongSleep(): Boolean {
+        if (sleepAtMs == -1L) {
+            sleepAtMs = 0
+            return true
+        }
+        return false
     }
 
     // ---- modes ----

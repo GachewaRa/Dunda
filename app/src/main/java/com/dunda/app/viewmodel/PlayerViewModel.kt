@@ -42,6 +42,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _crossfadeDuration = MutableStateFlow(10_000L)
     val crossfadeDuration: StateFlow<Long> = _crossfadeDuration
 
+    private val _queue = MutableStateFlow<List<Song>>(emptyList())
+    val queue: StateFlow<List<Song>> = _queue
+
+    private val _queueIndex = MutableStateFlow(-1)
+    val queueIndex: StateFlow<Int> = _queueIndex
+
+    /** 0 = off, -1 = end of song, otherwise epoch ms when playback pauses. */
+    private val _sleepTimer = MutableStateFlow(0L)
+    val sleepTimer: StateFlow<Long> = _sleepTimer
+
     private var musicService: MusicService? = null
     private var bound = false
 
@@ -153,6 +163,41 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         updateState()
     }
 
+    fun playAtIndex(index: Int) {
+        service()?.playAtIndex(index)
+        updateState()
+    }
+
+    fun playNext(song: Song) {
+        service()?.playNext(song)
+        updateState()
+    }
+
+    fun addToQueue(song: Song) {
+        service()?.addToQueue(song)
+        updateState()
+    }
+
+    fun removeFromQueue(index: Int) {
+        service()?.removeFromQueue(index)
+        updateState()
+    }
+
+    fun moveInQueue(from: Int, to: Int) {
+        service()?.moveInQueue(from, to)
+        updateState()
+    }
+
+    fun setSleepTimer(minutes: Int) {
+        service()?.setSleepTimer(minutes)
+        updateState()
+    }
+
+    fun setSleepAtEndOfSong() {
+        service()?.setSleepAtEndOfSong()
+        updateState()
+    }
+
     fun setCrossfadeDuration(durationMs: Long) {
         _crossfadeDuration.value = durationMs
         service()?.setCrossfadeDuration(durationMs)
@@ -169,6 +214,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             _isShuffleEnabled.value = service.isShuffleEnabled()
             _repeatMode.value = service.getRepeatMode()
             _isSoloMode.value = service.isSoloMode()
+            _queue.value = service.getQueue()
+            _queueIndex.value = service.getCurrentIndex()
+            _sleepTimer.value = service.getSleepTimerState()
         }
     }
 

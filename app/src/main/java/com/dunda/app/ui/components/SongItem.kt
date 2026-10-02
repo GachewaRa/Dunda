@@ -49,7 +49,9 @@ fun SongItem(
     onAddToPlaylist: ((Long) -> Unit)? = null,
     onRemoveFromPlaylist: (() -> Unit)? = null,
     onToggleFavourite: (() -> Unit)? = null,
-    onEditInfo: (() -> Unit)? = null
+    onEditInfo: (() -> Unit)? = null,
+    onPlayNext: (() -> Unit)? = null,
+    onAddToQueue: (() -> Unit)? = null
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -126,9 +128,11 @@ fun SongItem(
             }
         }
 
-        // More options (edit info / add to / remove from playlist)
+        // More options (edit info / queue / add to / remove from playlist)
         val hasAddMenu = onAddToPlaylist != null && playlists.isNotEmpty()
-        if (hasAddMenu || onRemoveFromPlaylist != null || onEditInfo != null) {
+        if (hasAddMenu || onRemoveFromPlaylist != null || onEditInfo != null ||
+            onPlayNext != null || onAddToQueue != null
+        ) {
             IconButton(onClick = { showMenu = true }) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
@@ -141,6 +145,24 @@ fun SongItem(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false }
             ) {
+                if (onPlayNext != null) {
+                    DropdownMenuItem(
+                        text = { Text("Play next") },
+                        onClick = {
+                            onPlayNext()
+                            showMenu = false
+                        }
+                    )
+                }
+                if (onAddToQueue != null) {
+                    DropdownMenuItem(
+                        text = { Text("Add to queue") },
+                        onClick = {
+                            onAddToQueue()
+                            showMenu = false
+                        }
+                    )
+                }
                 if (onEditInfo != null) {
                     DropdownMenuItem(
                         text = { Text("Edit info") },

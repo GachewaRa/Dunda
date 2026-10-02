@@ -44,6 +44,13 @@ statistics.
 | 29 | Library filters: minimum song length (default 1:50) + hide voice notes/recordings by file signature; both in Settings, auto-rescan on change; excluded files keep history (isPresent=0) | ✅ Done | `MediaScanner`, `SettingsStore`, `SettingsScreen` |
 | 30 | Play-tracker persistence (Room v4): partial listening time survives process death; self-healing tick guard | ✅ Done | `PlayTracker.restoreInstance`, `queue_state.trackerAccumulatedMs` |
 | 31 | Notification tap opens the app (session activity); paused service survives app-swipe; Settings toggle to exempt from battery optimization | ✅ Done | `MusicService.setSessionActivity`, `onTaskRemoved`, `SettingsScreen` |
+| 32 | Backup & restore: one JSON file (favourites, overrides, playlists, play history, settings); fingerprint matching survives new phones; import is merge-only | ✅ Done | `data/backup/BackupManager.kt`, Settings UI |
+| 33 | Queue screen: view/jump/reorder/remove; "Play next" + "Add to queue" in song menus | ✅ Done | `QueueScreen.kt`, `QueueManager.playNext/move` |
+| 34 | Sleep timer: 15/30/45/60 min or end of current song (suppresses the crossfade so the song ends cleanly) | ✅ Done | `MusicService` sleep API, Now Playing dialog |
+| 35 | Equal-power crossfade curve (cos²+sin²): no mid-fade loudness dip | ✅ Done | `CrossfadePlayer.updateCrossfadeVolumes` |
+| 36 | Swipe gestures: mini player & Now Playing art swipe to skip | ✅ Done | `MiniPlayer`, `NowPlayingScreen` |
+| 37 | Albums browsing (4th tab + album detail); startup no longer flashes empty library; dead BPM sort removed from menus | ✅ Done | `AlbumsScreen.kt`, `MusicViewModel` |
+| 38 | Signed release build (keystore + credentials outside repo in ~/.gradle) | ✅ Done | `app/build.gradle.kts` signingConfig |
 
 > Statuses reflect code + JVM unit tests (`app/src/test/`). On-device verification
 > (crossfade feel, notification controls) is tracked separately by the user.

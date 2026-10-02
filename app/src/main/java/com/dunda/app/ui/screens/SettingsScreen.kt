@@ -5,11 +5,15 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.PowerManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -22,6 +26,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -61,7 +66,11 @@ fun SettingsScreen(
             )
         )
 
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
             Text(
                 text = "Crossfade Duration",
                 style = MaterialTheme.typography.titleMedium
@@ -206,6 +215,58 @@ fun SettingsScreen(
                     }
                 )
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            BackupSection(musicViewModel)
         }
+    }
+}
+
+@Composable
+private fun BackupSection(musicViewModel: MusicViewModel) {
+    val backupStatus by musicViewModel.backupStatus.collectAsState()
+    val lastBackupAt by musicViewModel.lastBackupAt.collectAsState()
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let { musicViewModel.exportBackup(it) } }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { musicViewModel.importBackup(it) } }
+
+    Text(text = "Backup & restore", style = MaterialTheme.typography.titleMedium)
+    Text(
+        text = "Saves favourites, playlists, play history, edited titles and settings " +
+            "to a single file. Pick your Google Drive folder in the file picker and " +
+            "it syncs to the cloud automatically.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+    )
+    if (lastBackupAt > 0) {
+        Text(
+            text = "Last backup: " + java.text.SimpleDateFormat(
+                "d MMM yyyy, HH:mm", java.util.Locale.getDefault()
+            ).format(java.util.Date(lastBackupAt)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+    Row {
+        TextButton(onClick = {
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+                .format(java.util.Date())
+            exportLauncher.launch("dunda-backup-$stamp.json")
+        }) { Text("Back up now") }
+        TextButton(onClick = {
+            importLauncher.launch(arrayOf("application/json", "application/octet-stream"))
+        }) { Text("Restore…") }
+    }
+    backupStatus?.let {
+        Text(
+            text = it,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary
+        )
     }
 }

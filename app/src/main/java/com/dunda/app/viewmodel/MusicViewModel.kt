@@ -3,6 +3,7 @@ package com.dunda.app.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.dunda.app.data.backup.BackupManager
 import com.dunda.app.data.local.SettingsStore
 import com.dunda.app.data.local.SongPlayStats
 import com.dunda.app.data.model.Playlist
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -51,6 +53,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     init {
+        // The spinner gates only on the first cache emission (milliseconds),
+        // not the MediaStore scan — so launch never flashes "no music" while
+        // the scan runs; the list refreshes in place when the scan lands.
+        viewModelScope.launch {
+            repository.songs.first()
+            _isLoading.value = false
+        }
         loadSongs()
         viewModelScope.launch {
             repository.settings.librarySortMode.collect { saved ->
@@ -77,11 +86,35 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repository.settings.setExcludeNonMusic(value) }
     }
 
+    // ---- backup / restore ----
+
+    private val backupManager = BackupManager(application)
+
+    private val _backupStatus = MutableStateFlow<String?>(null)
+    val backupStatus: StateFlow<String?> = _backupStatus
+
+    val lastBackupAt: StateFlow<Long> = repository.settings.lastBackupAt
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0L)
+
+    fun exportBackup(uri: android.net.Uri) {
+        viewModelScope.launch {
+            _backupStatus.value = "Backing up…"
+            _backupStatus.value = runCatching { backupManager.export(uri) }
+                .getOrElse { "Backup failed: ${it.message}" }
+        }
+    }
+
+    fun importBackup(uri: android.net.Uri) {
+        viewModelScope.launch {
+            _backupStatus.value = "Restoring…"
+            _backupStatus.value = runCatching { backupManager.import(uri) }
+                .getOrElse { "Restore failed: ${it.message}" }
+        }
+    }
+
     fun loadSongs() {
         viewModelScope.launch {
-            _isLoading.value = true
             repository.refreshLibrary()
-            _isLoading.value = false
         }
     }
 
