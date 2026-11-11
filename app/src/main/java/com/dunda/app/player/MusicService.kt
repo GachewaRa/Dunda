@@ -160,6 +160,21 @@ class MusicService : MediaSessionService() {
             }
         }
 
+        // Recency-weighted shuffle: cycles bias against recently played songs,
+        // globally (across playlists and queue changes). The map stays fresh
+        // as plays are logged, so even within one session a replayed cycle
+        // knows what it has already heard.
+        serviceScope.launch {
+            database.playEventDao().lastPlayedTimes().collect { rows ->
+                lastPlayedById = rows.associate { it.songId to it.lastPlayedAt }
+            }
+        }
+        queueManager.shuffleWeightProvider = { song ->
+            QueueManager.recencyWeight(
+                lastPlayedById[song.id]?.let { System.currentTimeMillis() - it }
+            )
+        }
+
         restorePersistedState()
         trackerHandler.post(trackerRunnable)
     }
@@ -170,6 +185,7 @@ class MusicService : MediaSessionService() {
     private val cmdCycleRepeat = SessionCommand("dunda.CYCLE_REPEAT", Bundle.EMPTY)
 
     private var favouriteIds: Set<Long> = emptySet()
+    private var lastPlayedById: Map<Long, Long> = emptyMap()
     private val currentIsFavourite: Boolean
         get() = getCurrentSong()?.id?.let { it in favouriteIds } == true
 

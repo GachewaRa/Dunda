@@ -19,6 +19,11 @@ data class PlayCountRow(
     val playCount: Int,
 )
 
+data class LastPlayedRow(
+    val songId: Long,
+    val lastPlayedAt: Long,
+)
+
 @Dao
 interface PlayEventDao {
 
@@ -59,4 +64,8 @@ interface PlayEventDao {
 
     @Query("SELECT * FROM play_events")
     suspend fun getAllOnce(): List<PlayEvent>
+
+    /** Most recent play per song — drives the recency-weighted shuffle. */
+    @Query("SELECT songId, MAX(playedAt) AS lastPlayedAt FROM play_events GROUP BY songId")
+    fun lastPlayedTimes(): Flow<List<LastPlayedRow>>
 }

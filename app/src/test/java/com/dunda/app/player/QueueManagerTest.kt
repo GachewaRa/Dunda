@@ -270,6 +270,70 @@ class QueueManagerTest {
         assertEquals("reordering the visible queue must not change shuffle playback", expected, actual)
     }
 
+    // ---- recency-weighted shuffle ----
+
+    @Test
+    fun `recencyWeight maps never-played to full and just-played to floor`() {
+        assertEquals(1.0, QueueManager.recencyWeight(null), 1e-9)
+        assertEquals(QueueManager.MIN_WEIGHT, QueueManager.recencyWeight(0L), 1e-9)
+        assertEquals(QueueManager.MIN_WEIGHT, QueueManager.recencyWeight(30 * 60_000L), 0.02)
+        assertEquals(1.0, QueueManager.recencyWeight(80 * 3_600_000L), 1e-9) // past horizon
+        val midway = QueueManager.recencyWeight(36 * 3_600_000L)
+        assertTrue("36h should be partially recovered: $midway", midway in 0.4..0.7)
+    }
+
+    @Test
+    fun `weighted shuffle still plays every song exactly once per cycle`() {
+        val all = songs(15)
+        val qm = manager(all, shuffle = true, repeat = RepeatMode.ALL)
+        // half the songs "played just now"
+        qm.shuffleWeightProvider = { s ->
+            if (s.removePrefix("song").toInt() % 2 == 0) QueueManager.MIN_WEIGHT else 1.0
+        }
+        qm.setQueue(all, 0)
+        val cycle = listOf(qm.current!!) + playThrough(qm, 14)
+        assertEquals(all.toSet(), cycle.toSet())
+        assertEquals(15, cycle.distinct().size)
+    }
+
+    @Test
+    fun `recently played songs statistically sink toward the cycle end`() {
+        val all = songs(10)
+        var recentPositionSum = 0
+        var freshPositionSum = 0
+        // song10 is "just played"; the rest never played
+        for (seed in 1L..200L) {
+            val qm = QueueManager<String>(Random(seed))
+            qm.shuffleWeightProvider = { s -> if (s == "song10") QueueManager.MIN_WEIGHT else 1.0 }
+            qm.setShuffle(true)
+            qm.setQueue(all, 0)
+            val cycle = listOf(qm.current!!) + playThrough(qm, 9)
+            recentPositionSum += cycle.indexOf("song10")
+            freshPositionSum += cycle.indexOf("song5")
+        }
+        val recentAvg = recentPositionSum / 200.0
+        val freshAvg = freshPositionSum / 200.0
+        // Uniform average position would be 4.5 for both. The weighted song
+        // must sit clearly later; a fresh song near uniform.
+        assertTrue("recent song avg position $recentAvg should be late (>6.5)", recentAvg > 6.5)
+        assertTrue("fresh song avg position $freshAvg should be near uniform", freshAvg in 3.0..6.0)
+    }
+
+    @Test
+    fun `weighted song can still land early - tempered not banned`() {
+        val all = songs(8)
+        var earlyCount = 0
+        for (seed in 1L..300L) {
+            val qm = QueueManager<String>(Random(seed))
+            qm.shuffleWeightProvider = { s -> if (s == "song8") QueueManager.MIN_WEIGHT else 1.0 }
+            qm.setShuffle(true)
+            qm.setQueue(all, 0)
+            val cycle = listOf(qm.current!!) + playThrough(qm, 7)
+            if (cycle.indexOf("song8") < 4) earlyCount++
+        }
+        assertTrue("a weighted-down song must sometimes appear early ($earlyCount/300)", earlyCount > 0)
+    }
+
     @Test
     fun `single song queue with repeat ALL keeps replaying`() {
         val qm = manager(songs(1), repeat = RepeatMode.ALL)

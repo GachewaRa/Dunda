@@ -23,6 +23,34 @@ enum class RepeatMode { OFF, ALL, ONE, ONCE }
  */
 class QueueManager<T>(private val random: Random = Random.Default) {
 
+    companion object {
+        /** Weight floor: a just-played song stays possible, just unlikely. */
+        const val MIN_WEIGHT = 0.05
+        /** Hours until a played song recovers full shuffle weight. */
+        const val RECENCY_HORIZON_HOURS = 72.0
+
+        /**
+         * Freshness weight from time since last play. null = never played =
+         * full weight. Recovers linearly from MIN_WEIGHT to 1.0 over the
+         * horizon, so "played yesterday" is shy but not banned.
+         */
+        fun recencyWeight(msSinceLastPlay: Long?): Double {
+            if (msSinceLastPlay == null) return 1.0
+            val hours = msSinceLastPlay / 3_600_000.0
+            return (MIN_WEIGHT + (1.0 - MIN_WEIGHT) * (hours / RECENCY_HORIZON_HOURS))
+                .coerceIn(MIN_WEIGHT, 1.0)
+        }
+    }
+
+    /**
+     * Optional freshness source for weighted shuffle (docs/FEATURES.md §1).
+     * When set, shuffle cycles are drawn with Efraimidis–Spirakis weighted
+     * sampling without replacement: still a permutation of the whole queue,
+     * but recently played songs statistically sink toward the end — across
+     * queue changes and playlist switches, since weights are per song.
+     */
+    var shuffleWeightProvider: ((T) -> Double)? = null
+
     sealed interface NextAction<out T> {
         data class Play<T>(val item: T, val index: Int) : NextAction<T>
         data object RepeatCurrent : NextAction<Nothing>
@@ -286,9 +314,26 @@ class QueueManager<T>(private val random: Random = Random.Default) {
      */
     private var pending: MutableList<Int>? = null
 
+    /**
+     * A random permutation of item indices; weighted by freshness when a
+     * provider is set (higher weight = earlier positions, statistically),
+     * uniform Fisher–Yates otherwise.
+     */
+    private fun generatePermutation(): MutableList<Int> {
+        val provider = shuffleWeightProvider
+            ?: return items.indices.toMutableList().apply { shuffle(random) }
+        // Efraimidis–Spirakis: key = U^(1/w), sort descending = weighted
+        // sampling without replacement. Every index still appears once.
+        val keys = DoubleArray(items.size) { i ->
+            val w = provider(items[i]).coerceAtLeast(MIN_WEIGHT)
+            Math.pow(random.nextDouble(), 1.0 / w)
+        }
+        return items.indices.sortedByDescending { keys[it] }.toMutableList()
+    }
+
     private fun pendingCycle(): MutableList<Int> {
         pending?.let { return it }
-        val cycle = items.indices.toMutableList().apply { shuffle(random) }
+        val cycle = generatePermutation()
         if (cycle.size > 1 && cycle.first() == currentIndex) {
             val swapWith = 1 + random.nextInt(cycle.size - 1)
             cycle[0] = cycle[swapWith].also { cycle[swapWith] = cycle[0] }
@@ -299,7 +344,7 @@ class QueueManager<T>(private val random: Random = Random.Default) {
 
     private fun newCycle(pinCurrentFirst: Boolean) {
         pending = null
-        order = items.indices.toMutableList().apply { shuffle(random) }
+        order = generatePermutation()
         if (pinCurrentFirst && currentIndex >= 0) {
             order.remove(currentIndex)
             order.add(0, currentIndex)
