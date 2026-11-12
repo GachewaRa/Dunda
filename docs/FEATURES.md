@@ -52,6 +52,7 @@ statistics.
 | 37 | Albums browsing (4th tab + album detail); startup no longer flashes empty library; dead BPM sort removed from menus | ✅ Done | `AlbumsScreen.kt`, `MusicViewModel` |
 | 38 | Signed release build (keystore + credentials outside repo in ~/.gradle) | ✅ Done | `app/build.gradle.kts` signingConfig |
 | 39 | Recency-weighted shuffle: cycles bias against recently played songs via per-song last-played timestamps (from play_events), globally across playlists/queue changes. Efraimidis–Spirakis weighted permutation; weight floor 0.05, 72h recovery. Still exactly-once per cycle; explicit song taps unaffected | ✅ Done | `QueueManager.recencyWeight/shuffleWeightProvider`, `PlayEventDao.lastPlayedTimes` |
+| 40 | Scanner fixes: music extensions accepted regardless of MediaStore is_music flag (ringtones/alarms still excluded); junk-name filter judges file PATH only, not embedded title (renamed downloads with stale "videoplayback" tags were wrongly hidden) | ✅ Done | `MediaScanner` selection + `looksLikeNonMusic` |
 
 > Statuses reflect code + JVM unit tests (`app/src/test/`). On-device verification
 > (crossfade feel, notification controls) is tracked separately by the user.

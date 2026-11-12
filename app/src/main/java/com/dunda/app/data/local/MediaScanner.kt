@@ -28,8 +28,14 @@ class MediaScanner(private val context: Context) {
             Regex("""(^|/)rec[ _-]?\d{3,}""", RegexOption.IGNORE_CASE),
         )
 
+        /**
+         * Judged on the file PATH only, never the embedded title: downloads
+         * often get renamed to a proper song name while the title tag still
+         * says "videoplayback (1)" — the human-chosen filename wins. (Found
+         * the hard way: a renamed Davido m4a was filtered for its stale tag.)
+         */
         fun looksLikeNonMusic(title: String, path: String): Boolean =
-            NON_MUSIC_PATTERNS.any { it.containsMatchIn(title) || it.containsMatchIn(path) }
+            NON_MUSIC_PATTERNS.any { it.containsMatchIn(path) }
     }
 
     fun scanMusic(minDurationMs: Long = 0L, excludeNonMusic: Boolean = true): List<Song> {
@@ -47,7 +53,18 @@ class MediaScanner(private val context: Context) {
         )
 
         val minDuration = maxOf(5000L, minDurationMs)
-        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= $minDuration"
+        // MediaStore's is_music flag misses some genuine music (notoriously
+        // m4a from certain encoders), so known music extensions are accepted
+        // regardless of the flag — our own duration + non-music-pattern
+        // filters are the real gatekeepers. Ringtones/alarms stay out.
+        val musicExtensions = listOf("m4a", "flac", "opus", "ogg", "wav", "aac")
+            .joinToString(" OR ") { "${MediaStore.Audio.Media.DATA} LIKE '%.$it'" }
+        val selection =
+            "(${MediaStore.Audio.Media.IS_MUSIC} != 0 OR ($musicExtensions)) " +
+                "AND ${MediaStore.Audio.Media.IS_NOTIFICATION} = 0 " +
+                "AND ${MediaStore.Audio.Media.IS_RINGTONE} = 0 " +
+                "AND ${MediaStore.Audio.Media.IS_ALARM} = 0 " +
+                "AND ${MediaStore.Audio.Media.DURATION} >= $minDuration"
         val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
 
         context.contentResolver.query(
